@@ -1,14 +1,16 @@
-// @ts-nocheck
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Box, Button, Flex, Heading, Text, VStack, HStack, Image, SimpleGrid, Skeleton, Badge, Icon, Accordion, AccordionItem, AccordionButton, AccordionPanel } from '@chakra-ui/react';
 import { useTranslation } from 'react-i18next';
-import { ArrowRight, ChevronRight, ShieldCheck, Snowflake, TrendingDown, Package, Truck, Globe, Zap, Clock, Star, CheckCircle, Award, Gift, Eye, Utensils, UtensilsCrossed, Coffee, Building2, Pill, Store, Building, BookOpen, Navigation, Handshake, ShoppingCart } from 'lucide-react';
+import { ArrowRight, ChevronRight, ShieldCheck, Snowflake, TrendingDown, Package, Truck, Globe, Zap, Clock, Star, CheckCircle, Award, Eye, Building2, Store, ShoppingCart } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import { getCatStyle } from '../../lib/categoryIcons';
 import { getCategoryLabel } from '../../lib/categoryLabel';
+import { ProductCard, ProductRail } from '../../components/home/ProductCard';
+import { PromoBanner, VideoShowcase } from '../../components/home/HomeMedia';
+import { FlashDealsSection, OrderAgainSection, BulkDealsSection, TopSuppliersSection, BusinessTypeSection } from '../../components/home/HomeShortcuts';
 import type { Category, Product, Brand } from '../../types';
 
 // Catégories mises en avant en priorité — les plus restockées par épiceries,
@@ -26,46 +28,74 @@ const CATEGORY_IMAGE_OVERRIDES: { [key: string]: string } = {
   'Hygiène': '/cleaning-product.jfif',
 };
 
-// ── PROFESSIONAL UNIFIED COLOR PALETTE ────────────────────────────────────────
+// Rotating hero posters, and the separate ads strip below. Kept module-level so
+// the lists aren't rebuilt each render and the lengths can't drift apart.
+const CAROUSEL_IMAGES = ['/hero/one.png', '/hero/two.png', '/hero/tree.png'];
+const AD_IMAGES = ['/ads/ads1.jfif', '/ads/ads2.jpg', '/ads/ads3.jpg', '/ads/ads4.jpg', '/ads/ads5.png', '/ads/ads6.png'];
+
+// ── BRAND PALETTE ─────────────────────────────────────────────────────────────
+// Source of truth: VISUAL_IDENTITY.md §2. Navy carries authority, amber carries
+// action — those are the only two brand colours. Everything else is the slate
+// neutral ramp or a status colour; no decorative hues (identity §1 "sobre —
+// pas de fantaisie décorative").
 const C = {
-  // Primary Brand Colors
-  primary:     '#0f172a',      // Deep navy - primary CTA, headers, anchors
-  primaryLight:'#1e293b',      // Lighter navy for secondary elements
-  primaryMid:  '#1a2332',      // Mid navy for gradients
+  // Primary — navy
+  primary:     '#0d1f38',      // Navy: headers, headings, primary CTA
+  primaryLight:'#1a3558',      // Navy Mid: gradient end, hover
+  primaryMid:  '#13294a',      // Navy between the two, for 3-stop gradients
 
-  // Accent - vibrant but professional
-  accent:      '#d97706',      // Warm amber - highlights, secondary CTA
-  accentLight: '#fef3c7',      // Light amber background
-  accentBorder:'#fbbf24',      // Amber border for hover states
+  // Accent — amber. The only non-navy brand colour.
+  accent:      '#c97d1a',      // Amber: CTA, active links, highlights
+  accentLight: '#fef3c7',      // Amber Light: badge/alert backgrounds
+  accentBorder:'#fbbf24',      // Amber Border: hover borders, underlines
 
-  // Orange variants
-  orange:      '#f97316',      // Bright orange for highlights
-  orangeLight: '#fed7aa',      // Light orange background
+  // Amber aliases — kept so older call sites resolve to the brand amber
+  // instead of the off-brand bright orange they used to point at.
+  orange:      '#c97d1a',
+  orangeLight: '#fef3c7',
 
-  // Supporting Colors
-  success:     '#059669',      // Teal-green for positive actions
-  warning:     '#dc2626',      // Red for alerts/urgency (limited use)
-  warningLight:'#fee2e2',      // Light red/pink background
-  warningDark: '#b91c1c',      // Dark red for hover states
-  warningBorder:'#fca5a5',     // Light red border
-  info:        '#0891b2',      // Cyan for informational elements
+  // Status colours (identity §2 "Couleurs fonctionnelles")
+  success:     '#15803d',      // Delivered / positive
+  warning:     '#b91c1c',      // Promo urgency, disputes
+  warningLight:'#fee2e2',
+  warningDark: '#991b1b',      // Hover on warning
+  warningBorder:'#fca5a5',
+  info:        '#2c5dee',      // blue.500 — informational
 
-  // Neutral Colors - professional grayscale
-  text:        '#1f2937',      // Primary text
-  textMuted:   '#6b7280',      // Secondary text
-  textLight:   '#9ca3af',      // Tertiary text
-  border:      '#e5e7eb',      // Borders and dividers
-  divider:     '#f3f4f6',      // Light divider
+  // Neutrals — slate ramp (identity §2 "Couleurs neutres")
+  text:        '#334155',      // Body text
+  textMuted:   '#64748b',      // Secondary text
+  textLight:   '#94a3b8',      // Tertiary text
+  border:      '#e2e8f0',      // Borders
+  divider:     '#f1f5f9',      // Light divider
 
-  // Backgrounds
-  bg:          '#ffffff',      // White background
-  bgLight:     '#f9fafb',      // Off-white background
-  bgAlt:       '#f3f4f6',      // Alternative light background
+  // Backgrounds — the only three section tones, alternated for rhythm
+  bg:          '#ffffff',      // Card / section white
+  bgLight:     '#f8fafc',      // Global off-white
+  bgAlt:       '#f1f5f9',      // Deepest light step
 };
 
 // ── Container ─────────────────────────────────────────────────────────────────
 function Container({ children, py = 0 }: { children: React.ReactNode; py?: number }) {
   return <Box maxW="1400px" mx="auto" px={{ base: 4, md: 6 }} py={py}>{children}</Box>;
+}
+
+// Section heading: amber accent bar, optional eyebrow label above the title.
+function SectionTitle({ title, badge }: { title: string; badge?: string }) {
+  return (
+    <Flex align="stretch" gap={3} minW={0} pe={{ base: 2, md: 0 }}>
+      <Box w="4px" rounded="full" flexShrink={0} style={{ background: C.accent }} />
+      <Flex align="center" gap={{ base: 2, md: 3 }} wrap="wrap" minW={0}>
+        <Heading as="h2" fontSize={{ base: 'xl', md: '2xl' }} fontWeight="800" lineHeight="1.2"
+          letterSpacing="-0.01em" style={{ color: C.primary }}>{title}</Heading>
+        {badge && (
+          <Box rounded="full" px={2.5} py={0.5} style={{ background: `${C.accent}15`, border: `1px solid ${C.accentBorder}` }}>
+            <Text fontSize="11px" fontWeight="700" whiteSpace="nowrap" style={{ color: C.accent }}>{badge}</Text>
+          </Box>
+        )}
+      </Flex>
+    </Flex>
+  );
 }
 
 // ── Category tile — carré plein écran, libellé en surimpression ──────────────
@@ -209,21 +239,23 @@ function ProcessStep({ number, title, description, icon: IconComponent }: {
   number: number; title: string; description: string; icon: typeof Package;
 }) {
   return (
-    <VStack spacing={4} align="center" textAlign="center" p={6} rounded="lg"
+    // Phones: compact horizontal row (number + text). Tablet up: the tall card.
+    <Flex direction={{ base: 'row', md: 'column' }} gap={{ base: 4, md: 4 }} align={{ base: 'flex-start', md: 'center' }}
+      textAlign={{ base: 'start', md: 'center' }} p={{ base: 4, md: 6 }} rounded="lg"
       border="2px solid" borderColor={C.border} position="relative"
       _hover={{ shadow: 'lg', borderColor: C.accent }} transition="all 0.3s">
-      <Flex w={16} h={16} rounded="full" align="center" justify="center"
+      <Flex w={{ base: 10, md: 16 }} h={{ base: 10, md: 16 }} flexShrink={0} rounded="full" align="center" justify="center"
         style={{ background: `linear-gradient(135deg, ${C.accent} 0%, ${C.primary} 100%)` }}>
-        <Text fontWeight="800" fontSize="xl" color="white">{number}</Text>
+        <Text fontWeight="800" fontSize={{ base: 'lg', md: 'xl' }} color="white">{number}</Text>
       </Flex>
-      <Flex w={12} h={12} rounded="lg" align="center" justify="center" bg={C.bgAlt}>
+      <Flex w={12} h={12} rounded="lg" align="center" justify="center" bg={C.bgAlt} display={{ base: 'none', md: 'flex' }}>
         <IconComponent size={24} color={C.accent} />
       </Flex>
-      <VStack spacing={1}>
-        <Heading size="md" fontWeight="700" color={C.primary}>{title}</Heading>
+      <VStack spacing={1} align={{ base: 'flex-start', md: 'center' }}>
+        <Heading size={{ base: 'sm', md: 'md' }} fontWeight="700" color={C.primary}>{title}</Heading>
         <Text fontSize="sm" color={C.text}>{description}</Text>
       </VStack>
-    </VStack>
+    </Flex>
   );
 }
 
@@ -250,110 +282,19 @@ function TestimonialCard({ name, role, company, text, stars = 5 }: {
   );
 }
 
-// ── Promo product card — simple, prix visible à tous ──────────────────────────
+// ── Product cards — thin wrappers over the shared ProductCard ────────────────
 function PromoCard({ product }: { product: Product }) {
-  const navigate = useNavigate();
   const { t } = useTranslation();
-  const tiers = product.price_tiers?.slice().sort((a, b) => a.qty_min - b.qty_min) ?? [];
-  const first = tiers[0];
   const isDestock = (product.stock_qty ?? 0) > 0 && (product.stock_qty ?? 0) <= 20;
-  const badgeColor = isDestock ? C.warning : C.accent;
-  const badgeLabel = isDestock ? t('badges.destock') : t('badges.promo');
   return (
-    <Box flexShrink={0} w={{ base: '158px', md: '192px' }} bg="white" rounded="lg"
-      overflow="hidden" border="1px solid" borderColor={C.border}
-      cursor="pointer" onClick={() => navigate(`/product/${product.id}`)}
-      _hover={{ shadow: 'md', transform: 'translateY(-3px)', borderColor: C.accentBorder }}
-      transition="all 0.2s ease" position="relative">
-      <Box position="absolute" top={2} insetStart={2} zIndex={2}>
-        <Box style={{ background: badgeColor }} rounded="sm" px={1.5} py={0.5}>
-          <Text fontSize="8px" fontWeight="800" color="white">{badgeLabel}</Text>
-        </Box>
-      </Box>
-      <Box h={{ base: '128px', md: '155px' }} overflow="hidden">
-        {product.images?.[0] ? (
-          <Image src={product.images[0]} alt={product.name} w="full" h="full" objectFit="cover" />
-        ) : (
-          <Flex w="full" h="full" align="center" justify="center" style={{ background: C.bgAlt }}>
-            <Text fontWeight="900" fontSize="4xl" lineHeight={1} userSelect="none" style={{ color: '#cbd5e1' }}>
-              {product.name.charAt(0).toUpperCase()}
-            </Text>
-          </Flex>
-        )}
-      </Box>
-      <Box p={3}>
-        <Text fontSize="9px" fontWeight="700" noOfLines={1} mb={0.5}
-          textTransform="uppercase" letterSpacing="0.6px" style={{ color: C.accent }}>
-          {product.organisations?.name ?? 'Vendeur'}
-        </Text>
-        <Text fontWeight="600" color="gray.800" fontSize="xs" noOfLines={2} mb={1.5} lineHeight={1.4}>
-          {product.name}
-        </Text>
-        {first ? (
-          <HStack spacing={1} align="baseline">
-            <Text fontWeight="800" fontSize="md" lineHeight={1} style={{ color: C.primary }}>
-              {first.unit_price.toFixed(2)}
-            </Text>
-            <Text fontSize="9px" style={{ color: C.textMuted }}>{product.currency}</Text>
-          </HStack>
-        ) : (
-          <Text fontSize="xs" color="gray.400" fontStyle="italic">{t('common.onQuote')}</Text>
-        )}
-      </Box>
-    </Box>
+    <ProductCard product={product}
+      badge={isDestock ? t('badges.destock') : t('badges.promo')}
+      badgeColor={isDestock ? C.warning : C.accent} />
   );
 }
 
-// ── Market leader card — référence dominante, badge marque ───────────────────
 function MarketLeaderCard({ product }: { product: Product & { brands?: { name: string } | null } }) {
-  const navigate = useNavigate();
-  const tiers = product.price_tiers?.slice().sort((a, b) => a.qty_min - b.qty_min) ?? [];
-  const first = tiers[0];
-  return (
-    <Box flexShrink={0} w={{ base: '158px', md: '192px' }} bg="white" rounded="lg"
-      overflow="hidden" border="1px solid" borderColor={C.border}
-      cursor="pointer" onClick={() => navigate(`/product/${product.id}`)}
-      _hover={{ shadow: 'md', transform: 'translateY(-3px)', borderColor: C.primaryMid }}
-      transition="all 0.2s ease" position="relative">
-      {product.brands?.name && (
-        <Box position="absolute" top={2} insetStart={2} zIndex={2}>
-          <Box style={{ background: C.primary }} rounded="sm" px={1.5} py={0.5}>
-            <Text fontSize="8px" fontWeight="800" color="white" textTransform="uppercase" letterSpacing="0.4px">
-              {product.brands.name}
-            </Text>
-          </Box>
-        </Box>
-      )}
-      <Box h={{ base: '128px', md: '155px' }} overflow="hidden">
-        {product.images?.[0] ? (
-          <Image src={product.images[0]} alt={product.name} w="full" h="full" objectFit="cover" />
-        ) : (
-          <Flex w="full" h="full" align="center" justify="center" style={{ background: C.bgAlt }}>
-            <Text fontWeight="900" fontSize="4xl" lineHeight={1} userSelect="none" style={{ color: '#cbd5e1' }}>
-              {product.name.charAt(0).toUpperCase()}
-            </Text>
-          </Flex>
-        )}
-      </Box>
-      <Box p={3}>
-        <Text fontSize="9px" fontWeight="700" noOfLines={1} mb={0.5}
-          textTransform="uppercase" letterSpacing="0.6px" style={{ color: C.textMuted }}>
-          {product.organisations?.name ?? 'Vendeur'}
-        </Text>
-        <Text fontWeight="600" color="gray.800" fontSize="xs" noOfLines={2} mb={1.5} lineHeight={1.4}>
-          {product.name}
-        </Text>
-        {first && (
-          <HStack spacing={1} align="baseline">
-            <Text fontWeight="800" fontSize="md" lineHeight={1} style={{ color: C.primary }}>
-              {first.unit_price.toFixed(2)}
-            </Text>
-            <Text fontSize="9px" style={{ color: C.textMuted }}>{product.currency}</Text>
-          </HStack>
-        )}
-      </Box>
-    </Box>
-  );
+  return <ProductCard product={product} badge={product.brands?.name} badgeColor={C.primary} />;
 }
 
 // ── Bandeau de marques défilant en continu ────────────────────────────────────
@@ -390,9 +331,33 @@ function BrandMarquee({ brands }: { brands: Brand[] }) {
 }
 
 // ── Platform stat formatter ────────────────────────────────────────────────────
-function fmtStat(n: number, fallback: string): string {
-  if (n <= 0) return fallback;
+// Returns null when there is no real figure, so the caller omits the stat.
+// It previously fell back to invented numbers ("10 000+", "500+", "200+"),
+// which overstated the platform on a page whose whole job is earning trust.
+function fmtStat(n: number): string | null {
+  if (!Number.isFinite(n) || n <= 0) return null;
   return `${n.toLocaleString('fr-FR')}+`;
+}
+
+// ── Countdown to local midnight ────────────────────────────────────────────────
+// Daily deals really do reset at midnight, so this figure is true. The banner
+// used to print a frozen literal ("06:30:00") that never moved.
+function msUntilMidnight(): number {
+  const now = new Date();
+  const midnight = new Date(now);
+  midnight.setHours(24, 0, 0, 0);
+  return midnight.getTime() - now.getTime();
+}
+
+function useMidnightCountdown(): string {
+  const [remaining, setRemaining] = useState(msUntilMidnight);
+  useEffect(() => {
+    const id = setInterval(() => setRemaining(msUntilMidnight()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  const total = Math.max(0, Math.floor(remaining / 1000));
+  const pad = (v: number) => String(v).padStart(2, '0');
+  return `${pad(Math.floor(total / 3600))}:${pad(Math.floor((total % 3600) / 60))}:${pad(total % 60)}`;
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -400,18 +365,25 @@ export default function HomePage() {
   const navigate = useNavigate();
   const { t } = useTranslation();
   const { user } = useAuth();
+  const dealsResetIn = useMidnightCountdown();
 
   const [platformCounts, setPlatformCounts] = useState({ products: 0, vendors: 0, delivery: 0 });
   const [subCategories, setSubCategories] = useState<Category[]>([]);
   const [promos, setPromos] = useState<Product[]>([]);
   const [loadingPromos, setLoadingPromos] = useState(true);
+  const [partnerProducts, setPartnerProducts] = useState<Product[]>([]);
+  const [loadingPartners, setLoadingPartners] = useState(true);
+  const promoStripRef = useRef<HTMLDivElement>(null);
+  const promoPaused = useRef(false);
   const [marketLeaders, setMarketLeaders] = useState<Product[]>([]);
   const [loadingLeaders, setLoadingLeaders] = useState(true);
   const [newArrivals, setNewArrivals] = useState<Product[]>([]);
   const [loadingNew, setLoadingNew] = useState(true);
   const [brands, setBrands] = useState<Brand[]>([]);
   const [currentImageIdx, setCurrentImageIdx] = useState(0);
-  const CAROUSEL_IMAGES = ['/hero/one.png', '/hero/two.png', '/hero/tree.png'];
+  // The ads strip has its own index: it holds six images to the hero's three,
+  // and sharing one counter let an ad dot drive the hero past its last image.
+  const [adIdx, setAdIdx] = useState(0);
   const [categoryProducts1, setCategoryProducts1] = useState<Product[]>([]);
   const [loadingCat1, setLoadingCat1] = useState(true);
   const [categoryProducts2, setCategoryProducts2] = useState<Product[]>([]);
@@ -423,12 +395,30 @@ export default function HomePage() {
   const [categoryProducts5, setCategoryProducts5] = useState<Product[]>([]);
   const [loadingCat5, setLoadingCat5] = useState(true);
 
+  // Hero and ads advance on their own clocks, each bounded by its own length.
   useEffect(() => {
-    const interval = setInterval(() => {
+    const hero = setInterval(() => {
       setCurrentImageIdx((prev) => (prev + 1) % CAROUSEL_IMAGES.length);
     }, 6000);
-    return () => clearInterval(interval);
+    const ads = setInterval(() => {
+      setAdIdx((prev) => (prev + 1) % AD_IMAGES.length);
+    }, 5000);
+    return () => { clearInterval(hero); clearInterval(ads); };
   }, []);
+
+  // Promo strip drifts left on its own; pauses while hovered or touched and
+  // wraps back to the start when it reaches the end.
+  useEffect(() => {
+    const el = promoStripRef.current;
+    if (!el || loadingPromos) return;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const id = setInterval(() => {
+      if (promoPaused.current) return;
+      if (el.scrollLeft + el.clientWidth >= el.scrollWidth - 1) el.scrollLeft = 0;
+      else el.scrollLeft += 1;
+    }, 20);
+    return () => clearInterval(id);
+  }, [loadingPromos, promos.length]);
 
   useEffect(() => {
     Promise.all([
@@ -457,6 +447,20 @@ export default function HomePage() {
       .order('stock_qty', { ascending: true, nullsFirst: false })
       .limit(12)
       .then(({ data }) => { setPromos((data as Product[]) ?? []); setLoadingPromos(false); });
+
+    // Sélection partenaires — produits normaux (ni promo ni déstockage)
+    supabase.from('products').select('*, organisations(name), price_tiers(*)')
+      .eq('status', 'active').eq('is_on_promotion', false).gt('stock_qty', 20)
+      .order('avg_rating', { ascending: false })
+      .limit(200)
+      .then(({ data }) => {
+        // Les produits avec un prix affiché passent devant ceux « sur devis ».
+        const all = (data as Product[]) ?? [];
+        const priced = all.filter((p) => (p.price_tiers?.length ?? 0) > 0);
+        const onQuote = all.filter((p) => (p.price_tiers?.length ?? 0) === 0);
+        setPartnerProducts([...priced, ...onQuote].slice(0, 10));
+        setLoadingPartners(false);
+      });
 
     // New Arrivals — Recently added products
     supabase.from('products').select('*, organisations(name), price_tiers(*)')
@@ -533,33 +537,36 @@ export default function HomePage() {
       {/* ══════════════════════════════════════════════════════════════
           PROMO BANNER — Yellow moving text banner below navbar
       ══════════════════════════════════════════════════════════════ */}
-      <Box bg="#FFD700" py={2} style={{ overflow: 'hidden', borderBottom: '2px solid #FFC700' }}>
-        <style>{`
-          @keyframes marquee-promo {
-            0% { transform: translateX(100%); }
-            100% { transform: translateX(-100%); }
-          }
-          .promo-marquee {
-            display: flex;
-            white-space: nowrap;
-            animation: marquee-promo 15s linear infinite;
-            font-weight: 700;
-            font-size: 14px;
-            color: #333;
-          }
-        `}</style>
-        <Box className="promo-marquee">
-          <Text as="span" px={4}>✨ New sellers join daily! • Free shipping on orders above 500 MAD • Track all orders in one place • ✨</Text>
-          <Text as="span" px={4}>✨ New sellers join daily! • Free shipping on orders above 500 MAD • Track all orders in one place • ✨</Text>
-        </Box>
+      {/* Three standing facts about buying here. Static, not a marquee: a
+          looping ticker reads as a discount site, and this is a trade counter.
+          Each fact carries its own icon so it is scannable, not decorative. */}
+      <Box bg={C.accentLight} py={2.5} style={{ borderBottom: `1px solid ${C.accentBorder}` }}>
+        <Container>
+          <Flex align="center" justify="center" wrap="wrap" columnGap={{ base: 4, md: 9 }} rowGap={1}
+            fontSize={{ base: '11px', md: 'xs' }} fontWeight="600" style={{ color: '#92400e' }}>
+            <HStack spacing={2}>
+              <Truck size={14} />
+              <Text>{t('announce.freeShipping')}</Text>
+            </HStack>
+            <HStack spacing={2}>
+              <Package size={14} />
+              <Text>{t('announce.trackOrders')}</Text>
+            </HStack>
+            <HStack spacing={2}>
+              <Store size={14} />
+              <Text>{t('announce.newSellers')}</Text>
+            </HStack>
+          </Flex>
+        </Container>
       </Box>
 
       {/* ══════════════════════════════════════════════════════════════
           HERO — Rotating background images sliding right to left
       ══════════════════════════════════════════════════════════════ */}
-      <Box position="relative" overflow="hidden" w="100vw" h={{ base: '300px', sm: '400px', md: '500px', lg: '600px', xl: '700px' }}
+      {/* Box takes the hero images' own ratio (1893×831) so they fill edge to edge, uncropped */}
+      <Box position="relative" overflow="hidden" w="full" style={{ aspectRatio: '1893 / 831' }}
         backgroundImage={`url('${CAROUSEL_IMAGES[currentImageIdx]}')`}
-        backgroundSize="contain"
+        backgroundSize="cover"
         backgroundPosition="center"
         backgroundRepeat="no-repeat"
         backgroundAttachment="scroll"
@@ -570,21 +577,24 @@ export default function HomePage() {
             '0%': { backgroundPosition: 'right center' },
             '100%': { backgroundPosition: 'center' },
           },
-        }}>
-        {/* CTA Buttons - Centered */}
-        <Flex position="absolute" inset={0} align="center" justify="center">
-          <HStack spacing={{ base: 3, md: 4 }}>
-            <Button bg={C.success} color="white" fontWeight="700" px={{ base: 6, md: 8 }} py={{ base: 5, md: 6 }} fontSize={{ base: 'sm', md: 'md' }}
-              _hover={{ bg: '#128a45' }} transition="all 0.2s">
-              {t('hero.cta')} →
-            </Button>
-            <Button bg="white" color={C.primary} fontWeight="700" px={{ base: 6, md: 8 }} py={{ base: 5, md: 6 }} fontSize={{ base: 'sm', md: 'md' }}
-              _hover={{ bg: C.accentLight }} transition="all 0.2s">
-              {user ? t('hero.secondaryLogged') : t('hero.secondaryAnon')}
-            </Button>
-          </HStack>
-        </Flex>
-      </Box>
+        }}
+        // The artwork is a finished poster: it already carries the headline and
+        // its own painted "order now" button. So the poster itself is the link,
+        // rather than stacking real buttons on top of a painted one. The real
+        // CTAs live in the band below, where they have room.
+        role="link"
+        tabIndex={0}
+        aria-label={t('hero.cta')}
+        cursor="pointer"
+        onClick={() => navigate('/catalog')}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate('/catalog'); }
+        }}
+        _focusVisible={{ outline: `3px solid ${C.accent}`, outlineOffset: '-3px' }}
+      />
+
+
+      <FlashDealsSection />
 
       {/* ══════════════════════════════════════════════════════════════
           KPI BAR — chiffres clés de la plateforme
@@ -592,28 +602,59 @@ export default function HomePage() {
       <Box bg={C.bgAlt} py={{ base: 6, sm: 8, md: 10 }} mt={{ base: -5, md: -8 }} position="relative" zIndex={2}
         style={{ borderBottom: `1px solid ${C.divider}` }}>
         <Container>
-          <SimpleGrid columns={{ base: 1, sm: 2, lg: 3 }} spacing={{ base: 6, sm: 8, md: 10 }}>
-            {[
-              { icon: Package,     v: fmtStat(platformCounts.products, '10 000+'), l: t('stats.activeProducts') },
-              { icon: ShieldCheck, v: fmtStat(platformCounts.vendors, '500+'),     l: t('stats.verifiedVendors') },
-              { icon: Truck,       v: fmtStat(platformCounts.delivery, '200+'),    l: t('stats.deliveryPartners') },
-            ].map(({ icon: Icon, v, l }) => (
-              <Flex key={l} align="center" gap={{ base: 3, md: 4 }} direction={{ base: 'row' }}>
-                <Flex w={{ base: 10, sm: 11, md: 14 }} h={{ base: 10, sm: 11, md: 14 }} rounded="full" align="center" justify="center"
-                  flexShrink={0} style={{ background: C.primary }}>
-                  <Icon size={{ base: 18, md: 22 }} color="white" />
+          {/* Proof, then the two ways in. The numbers earn the click, so the
+              buttons sit beside them rather than on top of the poster. */}
+          <Flex direction={{ base: 'column', lg: 'row' }} align="center" gap={{ base: 6, lg: 12 }}>
+            <SimpleGrid columns={{ base: 1, sm: 3 }} spacing={{ base: 5, sm: 8, md: 10 }} flex={1} w="full">
+              {[
+                { icon: Package,     v: fmtStat(platformCounts.products), l: t('stats.activeProducts') },
+                { icon: ShieldCheck, v: fmtStat(platformCounts.vendors),  l: t('stats.verifiedVendors') },
+                { icon: Truck,       v: fmtStat(platformCounts.delivery), l: t('stats.deliveryPartners') },
+              ].filter(({ v }) => v !== null).map(({ icon: IconComponent, v, l }) => (
+                <Flex key={l} align="center" gap={{ base: 3, md: 4 }}>
+                  <Flex w={{ base: 10, sm: 11, md: 12 }} h={{ base: 10, sm: 11, md: 12 }} rounded="full" align="center" justify="center"
+                    flexShrink={0} style={{ background: C.primary }}>
+                    <Icon as={IconComponent} boxSize={{ base: '18px', md: '20px' }} color="white" />
+                  </Flex>
+                  <Box minW={0} flex={1}>
+                    <Text fontWeight="900" fontSize={{ base: '20px', md: '28px' }} style={{ color: C.primary }} lineHeight={1.15}>
+                      {v}
+                    </Text>
+                    <Text fontSize={{ base: 'xs', md: 'sm' }} fontWeight="600" mt={0.5} style={{ color: C.textMuted }} noOfLines={2}>
+                      {l}
+                    </Text>
+                  </Box>
                 </Flex>
-                <Box minW={0} flex={1}>
-                  <Text fontWeight="900" fontSize={{ base: '14px', sm: '20px', md: '32px' }} style={{ color: C.primary }} lineHeight={1.2}>
-                    {v}
-                  </Text>
-                  <Text fontSize={{ base: '9px', sm: 'xs', md: 'sm' }} fontWeight="600" mt={{ base: 0.5, md: 1 }} style={{ color: C.textMuted }} noOfLines={2}>
-                    {l}
-                  </Text>
-                </Box>
-              </Flex>
-            ))}
-          </SimpleGrid>
+              ))}
+            </SimpleGrid>
+
+            {/* Button geometry per identity §6 — 6px radius, weight 600, 0.01em */}
+            <HStack spacing={3} flexShrink={0} w={{ base: 'full', lg: 'auto' }}>
+              <Button
+                flex={{ base: 1, lg: 'none' }}
+                h={{ base: '44px', md: '48px' }} px={{ base: 5, md: 8 }} rounded="6px"
+                bg={C.accent} color="white"
+                fontWeight="600" fontSize={{ base: 'sm', md: 'md' }} letterSpacing="0.01em"
+                _hover={{ bg: C.accentBorder, color: C.primary }}
+                _focusVisible={{ boxShadow: `0 0 0 3px ${C.accentBorder}` }}
+                transition="all 0.15s ease"
+                onClick={() => navigate('/catalog')}>
+                {t('hero.cta')}
+              </Button>
+              <Button
+                flex={{ base: 1, lg: 'none' }}
+                h={{ base: '44px', md: '48px' }} px={{ base: 5, md: 8 }} rounded="6px"
+                bg="transparent" color={C.primary}
+                border="1px solid" borderColor={C.primary}
+                fontWeight="600" fontSize={{ base: 'sm', md: 'md' }} letterSpacing="0.01em"
+                _hover={{ bg: C.primary, color: 'white' }}
+                _focusVisible={{ boxShadow: `0 0 0 3px ${C.accentBorder}` }}
+                transition="all 0.15s ease"
+                onClick={() => navigate(user ? '/buyer' : '/auth')}>
+                {user ? t('hero.secondaryLogged') : t('hero.secondaryAnon')}
+              </Button>
+            </HStack>
+          </Flex>
         </Container>
       </Box>
 
@@ -671,88 +712,84 @@ export default function HomePage() {
       <Box bg="white" py={8} style={{ borderBottom: `1px solid ${C.border}` }}>
         <Container>
           <Flex align="center" justify="space-between" mb={8}>
-            <Heading size="md" fontWeight="800" style={{ color: C.primary }}>
-              {t('categories.title')}
-            </Heading>
-            <Button variant="ghost" size="sm" fontWeight="600" fontSize="sm"
+            <SectionTitle title={t('categories.title')} />
+            <Button variant="ghost" size="sm" fontWeight="600" fontSize="sm" h={{ base: '44px', md: 8 }} flexShrink={0}
               color={C.text} _hover={{ color: C.accent, bg: 'transparent' }}
               rightIcon={<ChevronRight size={13} />} onClick={() => navigate('/catalog')}>
               {t('common.seeAll')}
             </Button>
           </Flex>
 
-          <SimpleGrid columns={{ base: 3, sm: 4, md: 5, lg: 7 }} spacing={{ base: 4, md: 6 }} w="full">
+          {/* The 6 most common FMCG categories */}
+          <SimpleGrid columns={{ base: 3, md: 6 }} spacing={{ base: 4, md: 6 }} w="full">
             {[
-              { name: 'Beverages', image: '/categories/Beverages.png' },
-              { name: 'Dairy', image: '/categories/Dairy.png' },
-              { name: 'Meat', image: '/categories/Meat.png' },
-              { name: 'Cooking Oils', image: '/categories/cooking oils.png' },
-              { name: 'Frozen', image: '/categories/frozen.png' },
-              { name: 'Fruits', image: '/categories/fruit.png' },
-              { name: 'Packaging', image: '/categories/packaging.png' },
-            ].map((cat) => (
+              { name: 'Boissons', match: 'boisson', image: '/categories/Beverages.png' },
+              { name: 'Produits laitiers', match: 'laitier', image: '/categories/Dairy.png' },
+              { name: 'Épicerie sèche', match: 'épicerie', image: '/categories/cooking oils.png' },
+              { name: 'Biscuiterie et Confiserie', match: 'biscuit', image: '/categories/biscuiterie.png' },
+              { name: 'Hygiène', match: 'hygi', image: CATEGORY_IMAGE_OVERRIDES['Hygiène'] },
+              { name: 'Fruits & Légumes', match: 'fruit', image: '/categories/fruit.png' },
+            ].map((cat) => {
+              const { Icon: CatIcon, bg, color } = getCatStyle(cat.name);
+              return (
               <Flex key={cat.name} direction="column" align="center" gap={3} cursor="pointer"
-                onClick={() => navigate('/catalog')} _hover={{ transform: 'translateY(-4px)' }}
+                onClick={() => {
+                  const found = subCategories.find((c) => c.name.toLowerCase().includes(cat.match));
+                  navigate(found ? `/catalog?category=${found.id}` : '/catalog');
+                }} _hover={{ transform: 'translateY(-4px)' }}
                 transition="all 0.2s">
                 <Box position="relative" w={{ base: '80px', sm: '100px', md: '120px' }} h={{ base: '80px', sm: '100px', md: '120px' }}
-                  rounded="full" overflow="hidden" bg={C.bgAlt} border="3px solid" borderColor={C.border}
+                  rounded="full" overflow="hidden" bg={cat.image ? C.bgAlt : bg} border="3px solid" borderColor={C.border}
                   _hover={{ borderColor: C.accent, boxShadow: `0 0 0 2px ${C.accent}20` }} transition="all 0.3s">
-                  <Image src={cat.image} alt={cat.name} w="full" h="full" objectFit="cover" />
+                  {cat.image ? (
+                    <Image src={cat.image} alt={cat.name} w="full" h="full" objectFit="cover" />
+                  ) : (
+                    <Flex w="full" h="full" align="center" justify="center">
+                      {CatIcon && <CatIcon size={40} color={color} />}
+                    </Flex>
+                  )}
                 </Box>
                 <Text fontSize={{ base: '11px', sm: 'xs', md: 'sm' }} fontWeight="600" textAlign="center"
                   color={C.text} noOfLines={2} maxW="120px">
-                  {cat.name}
+                  {t(`categories.names.${cat.name}`)}
                 </Text>
               </Flex>
-            ))}
+              );
+            })}
           </SimpleGrid>
         </Container>
       </Box>
 
+      <OrderAgainSection />
+
+      <BulkDealsSection />
+
       {/* ══════════════════════════════════════════════════════════════
           FEATURED PRODUCTS — Vibrant grid with attention-grabbing design
       ══════════════════════════════════════════════════════════════ */}
-      {(loadingPromos || promos.length > 0) && (
-        <Box bg={C.orangeLight} py={{ base: 5, md: 7 }} style={{
-          borderBottom: `3px solid ${C.warning}`,
-          borderTop: `4px solid ${C.primary}`
+      {(loadingPartners || partnerProducts.length > 0) && (
+        <Box bg={C.bg} py={{ base: 5, md: 7 }} style={{
+          borderBottom: `1px solid ${C.border}`,
+          borderTop: `1px solid ${C.border}`
         }}>
           <Container>
-            <Flex align="center" justify="space-between" mb={5} display={{ base: 'none', md: 'flex' }}>
-              <HStack spacing={3} align="center">
-                <Heading size="lg" fontWeight="900" style={{
-                  background: `linear-gradient(135deg, ${C.warning} 0%, ${C.accent} 100%)`,
-                  WebkitBackgroundClip: 'text',
-                  WebkitTextFillColor: 'transparent',
-                  backgroundClip: 'text'
-                }}>
-                  ⭐ {t('sections.sponsored')}
-                </Heading>
-                <Box rounded="full" px={3} py={1.5} style={{
-                  background: `linear-gradient(135deg, ${C.primary} 0%, ${C.primaryMid} 100%)`,
-                  border: `2px solid ${C.accent}`
-                }}>
-                  <Text fontSize="11px" fontWeight="800" style={{ color: C.accent }}>🔥 {t('sections.topRated')}</Text>
-                </Box>
-              </HStack>
-              <Button size="sm" fontWeight="700" fontSize="sm"
+            <Flex align="flex-end" justify="space-between" mb={5} gap={3}>
+              <SectionTitle title={t('sections.sponsored')} badge={`🔥 ${t('sections.topRated')}`} />
+              <Button size="sm" fontWeight="700" fontSize="sm" flexShrink={0} h={{ base: '44px', md: 8 }}
                 bg={C.warning} color="white" _hover={{ bg: C.warningDark }}
                 rightIcon={<ChevronRight size={13} />} onClick={() => navigate('/catalog')}>
-                {t('common.seeAll')} →
+                {t('common.seeAll')}
               </Button>
             </Flex>
-            <Heading size="md" fontWeight="900" style={{ color: C.warning }} mb={5} display={{ base: 'block', md: 'none' }}>
-              ⭐ {t('sections.sponsored')}
-            </Heading>
-            <SimpleGrid columns={{ base: 2, sm: 3, md: 4, lg: 5 }} spacing={{ base: 2, md: 4 }}>
-              {loadingPromos
+            <ProductRail>
+              {loadingPartners
                 ? Array.from({ length: 10 }).map((_, i) => (
                     <Box key={i} rounded="lg" overflow="hidden" border="2px solid" borderColor={C.warning}>
                       <Skeleton h={{ base: '140px', md: '160px' }} /><Box p={2} bg="white"><Skeleton h="8px" mb={1} /><Skeleton h="8px" w="60%" /></Box>
                     </Box>
                   ))
-                : promos.slice(0, 10).map((p) => <PromoCard key={p.id} product={p} />)}
-            </SimpleGrid>
+                : partnerProducts.slice(0, 10).map((p) => <ProductCard key={p.id} product={p} />)}
+            </ProductRail>
           </Container>
         </Box>
       )}
@@ -761,50 +798,53 @@ export default function HomePage() {
           PREMIUM OFFER BANNER — Special pricing offer
       ══════════════════════════════════════════════════════════════ */}
       <Box
-        bg={`linear-gradient(135deg, #7c3aed 0%, #6d28d9 50%, #5b21b6 100%)`}
-        py={{ base: 6, md: 10 }}
+        bg={`linear-gradient(135deg, ${C.primary} 0%, ${C.primaryMid} 55%, ${C.primaryLight} 100%)`}
+        py={{ base: 7, md: 10 }}
         rounded="xl"
         mx={{ base: 4, md: 6 }}
         my={8}
         position="relative"
         overflow="hidden"
-        boxShadow="0 12px 32px rgba(124,58,237,0.4)"
+        boxShadow="0 12px 32px rgba(13,31,56,0.28)"
       >
-        <Box position="absolute" top={0} right={0} w="50%" h="full" opacity={0.15}>
-          <Box position="absolute" top="-20%" right="-10%" w="400px" h="400px"
-            rounded="full" style={{ background: 'white' }} />
-        </Box>
-        <Box position="absolute" bottom={0} left={0} w="30%" h="full" opacity={0.1}>
-          <Box position="absolute" bottom="-15%" left="-5%" w="250px" h="250px"
-            rounded="full" style={{ background: 'white' }} />
-        </Box>
         <Container>
-          <Flex align="center" justify="space-between" gap={6} position="relative" zIndex={2}>
-            <VStack align="start" spacing={4} flex={1}>
-              <Badge bg="white" color="#7c3aed" fontSize="xs" fontWeight="800" px={3} py={1} textTransform="uppercase">
-                🎁 {t('promotions.limitedTime')}
+          <Flex align="center" justify="space-between" gap={{ base: 7, md: 10 }}
+            direction={{ base: 'column', md: 'row' }} textAlign={{ base: 'center', md: 'start' }}>
+            <VStack align={{ base: 'center', md: 'start' }} spacing={3} flex={1}>
+              <Badge bg="rgba(251,191,36,0.16)" color={C.accentBorder} fontSize="xs" fontWeight="700"
+                px={3} py={1} rounded="full">
+                {t('promotions.limitedTime')}
               </Badge>
-              <Heading size="xl" color="white" fontWeight="900" lineHeight={1.1}>
+              <Heading size={{ base: 'lg', md: 'xl' }} color="white" fontWeight="900" lineHeight={1.15}>
                 {t('promotions.firstOrderSpecial')}
               </Heading>
-              <HStack spacing={1} align="baseline">
-                <Text color="white" fontSize={{ base: '2xl', md: '3xl' }} fontWeight="900">15%</Text>
-                <Text color="white" opacity={0.95} fontSize={{ base: 'sm', md: 'md' }} fontWeight="600">{t('promotions.off')} {t('promotions.firstOrderSpecial')}</Text>
-              </HStack>
-              <Text color="white" opacity={0.9} fontSize={{ base: 'xs', md: 'sm' }}>
+              <Text color="rgba(255,255,255,0.78)" fontSize={{ base: 'sm', md: 'md' }} maxW="46ch">
                 {t('promotions.newWholesaleBuyers')}
               </Text>
-              <Button size="md" bg="white" color="#7c3aed" fontWeight="800"
-                _hover={{ bg: '#f3f4f6', transform: 'translateY(-2px)' }}
-                transition="all 0.2s" mt={2}
-                rightIcon={<ArrowRight size={16} />}>
-                Use Code: FIRST15
+              <Button size="md" h="44px" bg={C.accent} color="white" fontWeight="700" mt={1}
+                _hover={{ bg: C.accentBorder, color: C.primary }}
+                transition="all 0.2s"
+                onClick={() => navigate('/catalog')}>
+                {t('promotions.shopNow')}
               </Button>
             </VStack>
-            <Flex display={{ base: 'none', lg: 'flex' }} align="center" justify="center" w="200px" h="200px"
-              rounded="full" bg="rgba(255,255,255,0.12)" flexShrink={0} border="2px solid" borderColor="rgba(255,255,255,0.2)">
-              <Gift size={80} color="white" opacity={0.7} />
-            </Flex>
+            {/* The offer is the anchor: the figure, then the code to enter at
+                checkout — set in mono per identity §3 (codes & références). */}
+            <VStack spacing={1} flexShrink={0}
+              px={{ base: 8, md: 10 }} py={{ base: 5, md: 6 }} rounded="lg"
+              bg="rgba(255,255,255,0.06)"
+              border="1px dashed" borderColor="rgba(251,191,36,0.55)">
+              <Text color={C.accentBorder} fontWeight="900" fontSize={{ base: '44px', md: '56px' }} lineHeight={1}>
+                15%
+              </Text>
+              <Text color="rgba(255,255,255,0.72)" fontSize="xs" fontWeight="600">
+                {t('promotions.off')}
+              </Text>
+              <Text color="white" fontFamily="'JetBrains Mono', 'Fira Code', monospace"
+                fontSize={{ base: 'sm', md: 'md' }} fontWeight="700" letterSpacing="0.14em" mt={2}>
+                FIRST15
+              </Text>
+            </VStack>
           </Flex>
         </Container>
       </Box>
@@ -813,32 +853,52 @@ export default function HomePage() {
           PROMOTIONS & DÉSTOCKAGE — Carousel with more products
       ══════════════════════════════════════════════════════════════ */}
       {(loadingPromos || promos.length > 0) && (
-        <Box bg={C.bgAlt} py={7} style={{
-          borderBottom: `1px solid ${C.border}`,
-          borderTop: `4px solid ${C.warning}`
+        <Box py={{ base: 8, md: 10 }} position="relative" overflow="hidden" style={{
+          background: `linear-gradient(135deg, ${C.warningDark} 0%, ${C.warning} 45%, #dc2626 100%)`,
+          borderBottom: `4px solid ${C.accentBorder}`,
+          borderTop: `4px solid ${C.accentBorder}`,
+          boxShadow: 'inset 0 0 80px rgba(0,0,0,0.25)',
         }}>
           <Container>
-            <Flex align="center" justify="space-between" mb={5}>
-              <HStack spacing={3} align="center">
-                <Heading size="md" fontWeight="800" style={{
-                  background: `linear-gradient(135deg, ${C.warning} 0%, ${C.orange} 100%)`,
-                  WebkitBackgroundClip: 'text',
-                  WebkitTextFillColor: 'transparent',
-                  backgroundClip: 'text'
-                }}>
+            <Flex align="center" justify="space-between" mb={{ base: 4, md: 6 }} gap={{ base: 2, md: 3 }} wrap="wrap">
+              <HStack spacing={{ base: 2, md: 3 }} align="center" wrap="wrap" rowGap={2}>
+                <Flex align="center" justify="center" w={10} h={10} rounded="full" bg={C.accentBorder} color={C.primary}
+                  display={{ base: 'none', md: 'flex' }}>
+                  <Zap size={22} fill="currentColor" />
+                </Flex>
+                <Heading size={{ base: 'sm', md: 'lg' }} fontWeight="900" color="white" textTransform="uppercase" letterSpacing="0.02em" w={{ base: 'full', md: 'auto' }}>
                   {t('sections.promoDestock')}
                 </Heading>
-                <Box rounded="md" px={2.5} py={1} style={{ background: C.warningLight, border: `1px solid ${C.warningBorder}` }}>
-                  <Text fontSize="10px" fontWeight="700" style={{ color: C.warning }}>{t('sections.limitedQty')}</Text>
+                <Box rounded="full" px={3} py={1} bg={C.accentBorder}>
+                  <Text fontSize="11px" fontWeight="800" color={C.primary}>{t('sections.limitedQty')}</Text>
                 </Box>
+                <HStack spacing={1.5} rounded="full" px={3} py={1} bg="rgba(0,0,0,0.3)" color="white">
+                  <Clock size={13} />
+                  <Text fontSize="11px" fontWeight="700" fontFamily="'JetBrains Mono', 'Fira Code', monospace">{dealsResetIn}</Text>
+                </HStack>
               </HStack>
-              <Button variant="ghost" size="sm" fontWeight="600" fontSize="sm"
-                color={C.text} _hover={{ color: C.accent, bg: 'transparent' }}
-                rightIcon={<ChevronRight size={13} />} onClick={() => navigate('/best-deals')}>
+              <Button size="sm" fontWeight="800" fontSize="sm" h={{ base: '36px', md: 8 }} bg="white" color={C.warning}
+                _hover={{ bg: C.accentBorder, color: C.primary }}
+                rightIcon={<ChevronRight size={14} />} onClick={() => navigate('/best-deals')}>
                 {t('common.seeAll')}
               </Button>
             </Flex>
-            <Flex gap={3} overflowX="auto" pb={1}
+            <Box position="relative">
+            {(['left', 'right'] as const).map((dir) => (
+              <Box key={dir} as="button" type="button" aria-label={dir === 'left' ? 'Précédent' : 'Suivant'}
+                position="absolute" top="50%" {...(dir === 'left' ? { insetStart: -2 } : { insetEnd: -2 })}
+                transform="translateY(-50%)" zIndex={3} w={9} h={9} rounded="full" bg="white" color={C.warning}
+                display={{ base: 'none', md: 'flex' }} alignItems="center" justifyContent="center"
+                boxShadow="0 2px 8px rgba(0,0,0,0.3)" _hover={{ bg: C.accentBorder, color: C.primary }}
+                onClick={() => promoStripRef.current?.scrollBy({ left: dir === 'left' ? -400 : 400, behavior: 'smooth' })}>
+                <ChevronRight size={18} style={{ transform: dir === 'left' ? 'rotate(180deg)' : undefined }} />
+              </Box>
+            ))}
+            <Flex ref={promoStripRef} gap={3} overflowX="auto" pb={1}
+              onMouseEnter={() => { promoPaused.current = true; }}
+              onMouseLeave={() => { promoPaused.current = false; }}
+              onTouchStart={() => { promoPaused.current = true; }}
+              onTouchEnd={() => { promoPaused.current = false; }}
               style={{ scrollbarWidth: 'none' }} sx={{ '&::-webkit-scrollbar': { display: 'none' } }}>
               {loadingPromos
                 ? Array.from({ length: 8 }).map((_, i) => (
@@ -849,6 +909,7 @@ export default function HomePage() {
                   ))
                 : promos.map((p) => <PromoCard key={p.id} product={p} />)}
             </Flex>
+            </Box>
           </Container>
         </Box>
       )}
@@ -857,242 +918,61 @@ export default function HomePage() {
           IMAGE ADS CAROUSEL — Moving promotional ads with full image display
       ══════════════════════════════════════════════════════════════ */}
       <Box bg="white" py={0} style={{ borderBottom: `1px solid ${C.border}` }}>
-        <Box position="relative" w="full" h={{ base: '250px', sm: '350px', md: '450px' }} overflow="hidden" display="flex" alignItems="center" justifyContent="center" bg="#f9fafb">
-          <Image src={['/ads/ads1.jfif', '/ads/ads2.jpg', '/ads/ads3.jpg', '/ads/ads4.jpg', '/ads/ads5.png', '/ads/ads6.png'][currentImageIdx % 6]} alt={`Ad ${(currentImageIdx % 6) + 1}`} w="full" h="full" objectFit="contain"
-            transition="opacity 0.5s ease-in-out" />
-          <Flex position="absolute" bottom={3} left="50%" transform="translateX(-50%)" gap={1.5}>
-            {['/ads/ads1.jfif', '/ads/ads2.jpg', '/ads/ads3.jpg', '/ads/ads4.jpg', '/ads/ads5.png', '/ads/ads6.png'].map((_, i) => (
-              <Box key={i} w={2} h={2} rounded="full"
-                bg={i === (currentImageIdx % 6) ? C.accent : 'rgba(255,255,255,0.5)'} cursor="pointer"
-                onClick={() => setCurrentImageIdx(i)} transition="all 0.2s"
-                _hover={{ bg: i === (currentImageIdx % 6) ? C.accent : 'rgba(255,255,255,0.8)' }} />
+        <Box position="relative" w="full" bg="#f9fafb">
+          <Flex w="full" h={{ base: '220px', sm: '350px', md: '450px' }} overflow="hidden" align="center" justify="center">
+            <Image src={AD_IMAGES[adIdx]} alt="" loading="lazy" w="full" h="full" objectFit="contain"
+              transition="opacity 0.5s ease-in-out" />
+          </Flex>
+          {/* Dots are real buttons: the visible dot stays small, but the hit
+              area is 24px so it can actually be tapped, and each one says
+              which slide it goes to. */}
+          <Flex as="nav" aria-label={t('sections.sponsored')}
+            justify="center" position={{ base: 'static', md: 'absolute' }} bottom={1} left="50%"
+            transform={{ base: 'none', md: 'translateX(-50%)' }}>
+            {AD_IMAGES.map((_, i) => (
+              <Box key={i} as="button" type="button"
+                aria-label={`${i + 1} / ${AD_IMAGES.length}`}
+                aria-current={i === adIdx ? 'true' : undefined}
+                onClick={() => setAdIdx(i)}
+                w={{ base: '44px', md: '24px' }} h={{ base: '44px', md: '24px' }} display="flex" alignItems="center" justifyContent="center"
+                bg="transparent" cursor="pointer"
+                _focusVisible={{ outline: `2px solid ${C.accent}`, outlineOffset: '-2px', borderRadius: '4px' }}>
+                <Box w={2.5} h={2.5} rounded="full" transition="background 0.2s"
+                  bg={i === adIdx ? C.accent : 'rgba(13,31,56,0.28)'} />
+              </Box>
             ))}
           </Flex>
         </Box>
       </Box>
 
-      {/* ══════════════════════════════════════════════════════════════
-          OFFRE SPÉCIAL — Animated rotating ads with countdown timer
-      ══════════════════════════════════════════════════════════════ */}
-      <Box bg="#dc2626" py={2} px={0} style={{ borderBottom: `3px solid #b91c1c`, borderTop: `3px solid #b91c1c` }}>
-        <Flex direction="column" gap={2} px={4} py={2}>
-          <Flex align="center" justify="space-between" direction={{ base: 'column', md: 'row' }} gap={2}>
-            <HStack spacing={2}>
-              <Badge bg="white" color="#dc2626" fontSize="10px" fontWeight="800" px={3} py={1} textTransform="uppercase">
-                🔥 OFFRE SPÉCIAL 🔥
-              </Badge>
-              <Box bg="rgba(255,255,255,0.2)" px={3} py={1} rounded="lg" border="2px solid white">
-                <Text fontWeight="800" fontSize="sm" color="white">
-                  06:30:00
-                </Text>
-              </Box>
-            </HStack>
-          </Flex>
-        </Flex>
+      <BusinessTypeSection />
 
-        <Box position="relative" w="full" h={{ base: '100px', sm: '120px', md: '140px' }} overflow="hidden" style={{
-          background: 'white'
-        }}>
-          <style>{`
-            @keyframes slide-three-ads {
-              0% { transform: translateX(0); }
-              100% { transform: translateX(-100%); }
-            }
-            .offre-special-carousel {
-              display: flex;
-              gap: 0;
-              width: 300%;
-              animation: slide-three-ads 15s linear infinite;
-              height: 100%;
-            }
-            .offre-ad-item {
-              flex: 0 0 calc(100% / 15);
-              display: flex;
-              align-items: center;
-              justify-content: center;
-              padding: 0;
-              min-width: 0;
-              margin: 0;
-            }
-          `}</style>
-          <Flex w="full" h="full" overflow="hidden">
-            <Box className="offre-special-carousel" w="300%">
-              {(() => {
-                const sideAds = ['/sideads/side1.jfif', '/sideads/side6.jfif', '/sideads/side11.jfif', '/sideads/side12.jfif', '/sideads/side13.jfif'];
-                return [...sideAds, ...sideAds, ...sideAds].map((ad, i) => (
-                  <Box key={i} className="offre-ad-item" flex="0 0 calc(100% / 15)">
-                    <Image src={ad} alt={`Ad ${i}`} h="100%" w="100%" objectFit="contain" />
-                  </Box>
-                ));
-              })()}
-            </Box>
-          </Flex>
-        </Box>
-      </Box>
+      <PromoBanner title="Livraison gratuite" subtitle="Dès votre première commande en gros" cta="Commander" to="/catalog"
+        from="#7c4a0d" via="#a96510" toColor="#c97d1a" />
 
       {/* ══════════════════════════════════════════════════════════════
-          RÉFÉRENCES DOMINANTES — Grid + Carousel for market leaders
+          CATEGORY 1: BOISSONS — Most valued products (TOP)
       ══════════════════════════════════════════════════════════════ */}
-      {(loadingLeaders || marketLeaders.length > 0) && (
-        <>
-          <Box bg="white" py={7} style={{ borderBottom: `1px solid ${C.border}` }}>
-            <Container>
-              <Flex align="center" justify="space-between" mb={5}>
-                <HStack spacing={3}>
-                  <Heading size="md" fontWeight="800" style={{ color: C.primary }}>
-                    {t('sections.marketLeaders')}
-                  </Heading>
-                  <Box rounded="md" px={2.5} py={1} style={{ background: `${C.accent}15`, border: `1px solid ${C.accentBorder}` }}>
-                    <Text fontSize="10px" fontWeight="700" style={{ color: C.accent }}>Top Rated</Text>
-                  </Box>
-                </HStack>
-                <Button variant="ghost" size="sm" fontWeight="600" fontSize="sm"
-                  color={C.text} _hover={{ color: C.accent, bg: 'transparent' }}
-                  rightIcon={<ChevronRight size={13} />} onClick={() => navigate('/catalog')}>
-                  {t('common.seeAll')}
-                </Button>
-              </Flex>
-              <SimpleGrid columns={{ base: 2, sm: 3, md: 4, lg: 5 }} spacing={4}>
-                {loadingLeaders
-                  ? Array.from({ length: 10 }).map((_, i) => (
-                      <Box key={i} rounded="lg" overflow="hidden" border="1px solid" borderColor={C.border}>
-                        <Skeleton h="160px" /><Box p={3}><Skeleton h="10px" mb={2} /><Skeleton h="10px" w="60%" /></Box>
-                      </Box>
-                    ))
-                  : marketLeaders.slice(0, 10).map((p) => <MarketLeaderCard key={p.id} product={p} />)}
-              </SimpleGrid>
-            </Container>
-          </Box>
-
-          {/* Carousel view for additional leaders */}
-          <Box bg={C.bgAlt} py={7} style={{ borderBottom: `1px solid ${C.border}` }}>
-            <Container>
-              <Heading size="sm" fontWeight="800" mb={5} style={{ color: C.primary }}>
-                {t('sections.marketLeaders')}
-              </Heading>
-              <Flex gap={3} overflowX="auto" pb={1}
-                style={{ scrollbarWidth: 'none' }} sx={{ '&::-webkit-scrollbar': { display: 'none' } }}>
-                {loadingLeaders
-                  ? Array.from({ length: 8 }).map((_, i) => (
-                      <Box key={i} flexShrink={0} w="192px" rounded="lg" overflow="hidden"
-                        border="1px solid" borderColor={C.border}>
-                        <Skeleton h="155px" /><Box p={3}><Skeleton h="10px" mb={2} /><Skeleton h="10px" w="60%" /></Box>
-                      </Box>
-                    ))
-                  : marketLeaders.slice(10).map((p) => <MarketLeaderCard key={p.id} product={p} />)}
-              </Flex>
-            </Container>
-          </Box>
-        </>
-      )}
-
-      {/* ══════════════════════════════════════════════════════════════
-          PROMOTIONAL VIDEO CAROUSEL — Auto-rotating featured videos
-      ══════════════════════════════════════════════════════════════ */}
-      <Box bg="white" py={{ base: 4, md: 6 }} style={{ borderBottom: `1px solid ${C.border}` }}>
-        <Container>
-          <VStack spacing={3} align="stretch">
-            <Box position="relative" w="full" style={{ aspectRatio: '16/9', maxW: '600px', mx: 'auto', borderRadius: '8px', overflow: 'hidden', boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }} group>
-              <iframe
-                width="100%"
-                height="100%"
-                src={`https://www.youtube.com/embed/0WToWtrcp_Q?autoplay=1&mute=1`}
-                title="Stock212 - B2B Marketplace"
-                frameBorder="0"
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                allowFullScreen
-                style={{ position: 'absolute', top: 0, left: 0 }}
-              />
-              <Box position="absolute" top={2} right={2} opacity={0} _groupHover={{ opacity: 1 }} transition="opacity 0.2s" style={{ zIndex: 10 }}>
-                <Button size="sm" colorScheme="blackAlpha" variant="solid"
-                  onClick={() => window.open(`https://www.youtube.com/watch?v=0WToWtrcp_Q`, '_blank')}
-                  title="Watch in Picture-in-Picture">
-                  📺 PiP
-                </Button>
-              </Box>
-            </Box>
-
-            <Flex justify="center" gap={1.5}>
-              {[0, 1, 2, 3, 4].map((i) => (
-                <Box key={i} w={2} h={2} rounded="full"
-                  bg={C.border} cursor="pointer"
-                  _hover={{ bg: C.textMuted }}
-                  transition="all 0.2s" />
-              ))}
-            </Flex>
-          </VStack>
-        </Container>
-      </Box>
-
-      {/* ══════════════════════════════════════════════════════════════
-          NEW ARRIVALS — Latest products added to the platform
-      ══════════════════════════════════════════════════════════════ */}
-      {(loadingNew || newArrivals.length > 0) && (
-        <Box bg="#ecfdf5" py={7} style={{
-          borderBottom: `1px solid ${C.border}`,
-          borderTop: `4px solid #10b981`
-        }}>
+      {(loadingCat1 || categoryProducts1.length > 0) && (
+        <Box bg={C.bgAlt} py={7} style={{ borderBottom: `1px solid ${C.border}` }}>
           <Container>
             <Flex align="center" justify="space-between" mb={5}>
-              <HStack spacing={3}>
-                <Heading size="md" fontWeight="800" style={{
-                  background: `linear-gradient(135deg, #059669 0%, #10b981 100%)`,
-                  WebkitBackgroundClip: 'text',
-                  WebkitTextFillColor: 'transparent',
-                  backgroundClip: 'text'
-                }}>
-                  🆕 {t('sections.partnerBrands')}
-                </Heading>
-              </HStack>
-              <Button variant="ghost" size="sm" fontWeight="600" fontSize="sm"
+              <SectionTitle title="Top Boissons & Rafraîchissements" badge={t('badges.topRated')} />
+              <Button variant="ghost" size="sm" fontWeight="600" fontSize="sm" h={{ base: '44px', md: 8 }} flexShrink={0}
                 color={C.text} _hover={{ color: C.accent, bg: 'transparent' }}
                 rightIcon={<ChevronRight size={13} />} onClick={() => navigate('/catalog')}>
                 {t('common.seeAll')}
               </Button>
             </Flex>
-            <SimpleGrid columns={{ base: 2, sm: 3, md: 4, lg: 5 }} spacing={4}>
-              {loadingNew
+            <ProductRail>
+              {loadingCat1
                 ? Array.from({ length: 10 }).map((_, i) => (
                     <Box key={i} rounded="lg" overflow="hidden" border="1px solid" borderColor={C.border}>
                       <Skeleton h="160px" /><Box p={3}><Skeleton h="10px" mb={2} /><Skeleton h="10px" w="60%" /></Box>
                     </Box>
                   ))
-                : newArrivals.slice(0, 10).map((p) => <PromoCard key={p.id} product={p} />)}
-            </SimpleGrid>
-          </Container>
-        </Box>
-      )}
-
-      {/* ══════════════════════════════════════════════════════════════
-          CATEGORY 5: BISCUITERIE & CONFISERIE — Most valued products (TOP)
-      ══════════════════════════════════════════════════════════════ */}
-      {(loadingCat5 || categoryProducts5.length > 0) && (
-        <Box bg="white" py={7} style={{ borderBottom: `1px solid ${C.border}` }}>
-          <Container>
-            <Flex align="center" justify="space-between" mb={5}>
-              <HStack spacing={3}>
-                <Heading size="md" fontWeight="800" style={{ color: C.primary }}>
-                  Biscuiterie & Confiserie
-                </Heading>
-                <Box rounded="md" px={2.5} py={1} style={{ background: `${C.accent}15`, border: `1px solid ${C.accentBorder}` }}>
-                  <Text fontSize="10px" fontWeight="700" style={{ color: C.accent }}>Best Rated</Text>
-                </Box>
-              </HStack>
-              <Button variant="ghost" size="sm" fontWeight="600" fontSize="sm"
-                color={C.text} _hover={{ color: C.accent, bg: 'transparent' }}
-                rightIcon={<ChevronRight size={13} />} onClick={() => navigate('/catalog')}>
-                {t('common.seeAll')}
-              </Button>
-            </Flex>
-            <SimpleGrid columns={{ base: 2, sm: 3, md: 4, lg: 5 }} spacing={4}>
-              {loadingCat5
-                ? Array.from({ length: 10 }).map((_, i) => (
-                    <Box key={i} rounded="lg" overflow="hidden" border="1px solid" borderColor={C.border}>
-                      <Skeleton h="160px" /><Box p={3}><Skeleton h="10px" mb={2} /><Skeleton h="10px" w="60%" /></Box>
-                    </Box>
-                  ))
-                : categoryProducts5.slice(0, 10).map((p) => <PromoCard key={p.id} product={p} />)}
-            </SimpleGrid>
+                : categoryProducts1.slice(0, 10).map((p) => <PromoCard key={p.id} product={p} />)}
+            </ProductRail>
           </Container>
         </Box>
       )}
@@ -1104,21 +984,14 @@ export default function HomePage() {
         <Box bg={C.bgAlt} py={7} style={{ borderBottom: `1px solid ${C.border}` }}>
           <Container>
             <Flex align="center" justify="space-between" mb={5}>
-              <HStack spacing={3}>
-                <Heading size="md" fontWeight="800" style={{ color: C.primary }}>
-                  Top Produits Laitiers
-                </Heading>
-                <Box rounded="md" px={2.5} py={1} style={{ background: `${C.accent}15`, border: `1px solid ${C.accentBorder}` }}>
-                  <Text fontSize="10px" fontWeight="700" style={{ color: C.accent }}>Best Rated</Text>
-                </Box>
-              </HStack>
-              <Button variant="ghost" size="sm" fontWeight="600" fontSize="sm"
+              <SectionTitle title={t('categories.names.Produits laitiers')} badge={t('badges.topRated')} />
+              <Button variant="ghost" size="sm" fontWeight="600" fontSize="sm" h={{ base: '44px', md: 8 }} flexShrink={0}
                 color={C.text} _hover={{ color: C.accent, bg: 'transparent' }}
                 rightIcon={<ChevronRight size={13} />} onClick={() => navigate('/catalog')}>
                 {t('common.seeAll')}
               </Button>
             </Flex>
-            <SimpleGrid columns={{ base: 2, sm: 3, md: 4, lg: 5 }} spacing={4}>
+            <ProductRail>
               {loadingCat2
                 ? Array.from({ length: 10 }).map((_, i) => (
                     <Box key={i} rounded="lg" overflow="hidden" border="1px solid" borderColor={C.border}>
@@ -1126,78 +999,39 @@ export default function HomePage() {
                     </Box>
                   ))
                 : categoryProducts2.slice(0, 10).map((p) => <PromoCard key={p.id} product={p} />)}
-            </SimpleGrid>
+            </ProductRail>
           </Container>
         </Box>
       )}
 
       {/* ══════════════════════════════════════════════════════════════
-          CATEGORY 1: BOISSONS — Most valued products (TOP)
+          CATEGORY 5: BISCUITERIE & CONFISERIE — Most valued products (TOP)
       ══════════════════════════════════════════════════════════════ */}
-      {(loadingCat1 || categoryProducts1.length > 0) && (
-        <Box bg={C.bgAlt} py={7} style={{ borderBottom: `1px solid ${C.border}` }}>
+      {(loadingCat5 || categoryProducts5.length > 0) && (
+        <Box bg="white" py={7} style={{ borderBottom: `1px solid ${C.border}` }}>
           <Container>
             <Flex align="center" justify="space-between" mb={5}>
-              <HStack spacing={3}>
-                <Heading size="md" fontWeight="800" style={{ color: C.primary }}>
-                  Top Boissons & Rafraîchissements
-                </Heading>
-                <Box rounded="md" px={2.5} py={1} style={{ background: `${C.accent}15`, border: `1px solid ${C.accentBorder}` }}>
-                  <Text fontSize="10px" fontWeight="700" style={{ color: C.accent }}>Best Rated</Text>
-                </Box>
-              </HStack>
-              <Button variant="ghost" size="sm" fontWeight="600" fontSize="sm"
+              <SectionTitle title={t('categories.names.Biscuiterie et Confiserie')} badge={t('badges.topRated')} />
+              <Button variant="ghost" size="sm" fontWeight="600" fontSize="sm" h={{ base: '44px', md: 8 }} flexShrink={0}
                 color={C.text} _hover={{ color: C.accent, bg: 'transparent' }}
                 rightIcon={<ChevronRight size={13} />} onClick={() => navigate('/catalog')}>
                 {t('common.seeAll')}
               </Button>
             </Flex>
-            <SimpleGrid columns={{ base: 2, sm: 3, md: 4, lg: 5 }} spacing={4}>
-              {loadingCat1
+            <ProductRail>
+              {loadingCat5
                 ? Array.from({ length: 10 }).map((_, i) => (
                     <Box key={i} rounded="lg" overflow="hidden" border="1px solid" borderColor={C.border}>
                       <Skeleton h="160px" /><Box p={3}><Skeleton h="10px" mb={2} /><Skeleton h="10px" w="60%" /></Box>
                     </Box>
                   ))
-                : categoryProducts1.slice(0, 10).map((p) => <PromoCard key={p.id} product={p} />)}
-            </SimpleGrid>
+                : categoryProducts5.slice(0, 10).map((p) => <PromoCard key={p.id} product={p} />)}
+            </ProductRail>
           </Container>
         </Box>
       )}
 
-      {/* ══════════════════════════════════════════════════════════════
-          CATEGORY 2: PRODUITS LAITIERS — Most valued products
-      ══════════════════════════════════════════════════════════════ */}
-      {(loadingCat2 || categoryProducts2.length > 0) && (
-        <Box bg={C.bgAlt} py={7} style={{ borderBottom: `1px solid ${C.border}` }}>
-          <Container>
-            <Flex align="center" justify="space-between" mb={5}>
-              <HStack spacing={3}>
-                <Heading size="md" fontWeight="800" style={{ color: C.primary }}>
-                  🥛 Top Produits Laitiers
-                </Heading>
-                <Box rounded="md" px={2.5} py={1} style={{ background: `${C.accent}15`, border: `1px solid ${C.accentBorder}` }}>
-                  <Text fontSize="10px" fontWeight="700" style={{ color: C.accent }}>Best Rated</Text>
-                </Box>
-              </HStack>
-              <Button variant="ghost" size="sm" fontWeight="600" fontSize="sm"
-                color={C.text} _hover={{ color: C.accent, bg: 'transparent' }}
-                rightIcon={<ChevronRight size={13} />} onClick={() => navigate('/catalog')}>
-                {t('common.seeAll')}
-              </Button>
-            </Flex>
-            <SimpleGrid columns={{ base: 2, sm: 3, md: 4, lg: 5 }} spacing={4}>
-              {loadingCat2
-                ? Array.from({ length: 10 }).map((_, i) => (
-                    <Box key={i} rounded="lg" overflow="hidden" border="1px solid" borderColor={C.border}>
-                      <Skeleton h="160px" /><Box p={3}><Skeleton h="10px" mb={2} /><Skeleton h="10px" w="60%" /></Box>
-                    </Box>
-                  ))
-                : categoryProducts2.slice(0, 10).map((p) => <PromoCard key={p.id} product={p} />)}
-            </SimpleGrid>
-          </Container>
-        </Box>
-      )}
+      <PromoBanner title="Biscuiterie -15%" subtitle="Sur toute la gamme biscuiterie & confiserie" to="/catalog" />
 
       {/* ══════════════════════════════════════════════════════════════
           CATEGORY 3: ÉPICERIE SÈCHE — Most valued products
@@ -1206,21 +1040,14 @@ export default function HomePage() {
         <Box bg={C.bgAlt} py={7} style={{ borderBottom: `1px solid ${C.border}` }}>
           <Container>
             <Flex align="center" justify="space-between" mb={5}>
-              <HStack spacing={3}>
-                <Heading size="md" fontWeight="800" style={{ color: C.primary }}>
-                  Épicerie Sèche & Essentiels
-                </Heading>
-                <Box rounded="md" px={2.5} py={1} style={{ background: `${C.accent}15`, border: `1px solid ${C.accentBorder}` }}>
-                  <Text fontSize="10px" fontWeight="700" style={{ color: C.accent }}>Best Rated</Text>
-                </Box>
-              </HStack>
-              <Button variant="ghost" size="sm" fontWeight="600" fontSize="sm"
+              <SectionTitle title="Épicerie Sèche & Essentiels" badge={t('badges.topRated')} />
+              <Button variant="ghost" size="sm" fontWeight="600" fontSize="sm" h={{ base: '44px', md: 8 }} flexShrink={0}
                 color={C.text} _hover={{ color: C.accent, bg: 'transparent' }}
                 rightIcon={<ChevronRight size={13} />} onClick={() => navigate('/catalog')}>
                 {t('common.seeAll')}
               </Button>
             </Flex>
-            <SimpleGrid columns={{ base: 2, sm: 3, md: 4, lg: 5 }} spacing={4}>
+            <ProductRail>
               {loadingCat3
                 ? Array.from({ length: 10 }).map((_, i) => (
                     <Box key={i} rounded="lg" overflow="hidden" border="1px solid" borderColor={C.border}>
@@ -1228,7 +1055,7 @@ export default function HomePage() {
                     </Box>
                   ))
                 : categoryProducts3.slice(0, 10).map((p) => <PromoCard key={p.id} product={p} />)}
-            </SimpleGrid>
+            </ProductRail>
           </Container>
         </Box>
       )}
@@ -1240,21 +1067,14 @@ export default function HomePage() {
         <Box bg="white" py={7} style={{ borderBottom: `1px solid ${C.border}` }}>
           <Container>
             <Flex align="center" justify="space-between" mb={5}>
-              <HStack spacing={3}>
-                <Heading size="md" fontWeight="800" style={{ color: C.primary }}>
-                  Fruits & Légumes Frais
-                </Heading>
-                <Box rounded="md" px={2.5} py={1} style={{ background: `${C.accent}15`, border: `1px solid ${C.accentBorder}` }}>
-                  <Text fontSize="10px" fontWeight="700" style={{ color: C.accent }}>Best Rated</Text>
-                </Box>
-              </HStack>
-              <Button variant="ghost" size="sm" fontWeight="600" fontSize="sm"
+              <SectionTitle title="Fruits & Légumes Frais" badge={t('badges.topRated')} />
+              <Button variant="ghost" size="sm" fontWeight="600" fontSize="sm" h={{ base: '44px', md: 8 }} flexShrink={0}
                 color={C.text} _hover={{ color: C.accent, bg: 'transparent' }}
                 rightIcon={<ChevronRight size={13} />} onClick={() => navigate('/catalog')}>
                 {t('common.seeAll')}
               </Button>
             </Flex>
-            <SimpleGrid columns={{ base: 2, sm: 3, md: 4, lg: 5 }} spacing={4}>
+            <ProductRail>
               {loadingCat4
                 ? Array.from({ length: 10 }).map((_, i) => (
                     <Box key={i} rounded="lg" overflow="hidden" border="1px solid" borderColor={C.border}>
@@ -1262,29 +1082,86 @@ export default function HomePage() {
                     </Box>
                   ))
                 : categoryProducts4.slice(0, 10).map((p) => <PromoCard key={p.id} product={p} />)}
-            </SimpleGrid>
+            </ProductRail>
           </Container>
         </Box>
       )}
+
+      {/* ══════════════════════════════════════════════════════════════
+          RÉFÉRENCES DOMINANTES — Grid + Carousel for market leaders
+      ══════════════════════════════════════════════════════════════ */}
+      {(loadingLeaders || marketLeaders.length > 0) && (
+        <>
+          <Box bg="white" py={7} style={{ borderBottom: `1px solid ${C.border}` }}>
+            <Container>
+              <Flex align="center" justify="space-between" mb={5}>
+                <SectionTitle title={t('sections.marketLeaders')} badge="Top Rated" />
+                <Button variant="ghost" size="sm" fontWeight="600" fontSize="sm" h={{ base: '44px', md: 8 }} flexShrink={0}
+                  color={C.text} _hover={{ color: C.accent, bg: 'transparent' }}
+                  rightIcon={<ChevronRight size={13} />} onClick={() => navigate('/catalog')}>
+                  {t('common.seeAll')}
+                </Button>
+              </Flex>
+              <ProductRail>
+                {loadingLeaders
+                  ? Array.from({ length: 10 }).map((_, i) => (
+                      <Box key={i} rounded="lg" overflow="hidden" border="1px solid" borderColor={C.border}>
+                        <Skeleton h="160px" /><Box p={3}><Skeleton h="10px" mb={2} /><Skeleton h="10px" w="60%" /></Box>
+                      </Box>
+                    ))
+                  : marketLeaders.map((p) => <MarketLeaderCard key={p.id} product={p} />)}
+              </ProductRail>
+            </Container>
+          </Box>
+
+        </>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════════
+          NEW ARRIVALS — Latest products added to the platform
+      ══════════════════════════════════════════════════════════════ */}
+      {(loadingNew || newArrivals.length > 0) && (
+        <Box bg={C.bgLight} py={7} style={{ borderBottom: `1px solid ${C.border}` }}>
+          <Container>
+            <Flex align="center" justify="space-between" mb={5}>
+              <SectionTitle title={t('promos.newArrivals')} />
+              <Button variant="ghost" size="sm" fontWeight="600" fontSize="sm" h={{ base: '44px', md: 8 }} flexShrink={0}
+                color={C.text} _hover={{ color: C.accent, bg: 'transparent' }}
+                rightIcon={<ChevronRight size={13} />} onClick={() => navigate('/catalog')}>
+                {t('common.seeAll')}
+              </Button>
+            </Flex>
+            <ProductRail>
+              {loadingNew
+                ? Array.from({ length: 10 }).map((_, i) => (
+                    <Box key={i} rounded="lg" overflow="hidden" border="1px solid" borderColor={C.border}>
+                      <Skeleton h="160px" /><Box p={3}><Skeleton h="10px" mb={2} /><Skeleton h="10px" w="60%" /></Box>
+                    </Box>
+                  ))
+                : newArrivals.slice(0, 10).map((p) => <PromoCard key={p.id} product={p} />)}
+            </ProductRail>
+          </Container>
+        </Box>
+      )}
+
+      <TopSuppliersSection />
+
+      {/* Add more { id: <YouTube id>, title } entries to extend the switcher. */}
+      <VideoShowcase videos={[{ id: '0WToWtrcp_Q', title: 'Stock212 - B2B Marketplace' }]} />
 
       {/* ══════════════════════════════════════════════════════════════
           FOR BUYERS — Dual Value Prop
       ══════════════════════════════════════════════════════════════ */}
       <Box bg="white" py={9} style={{
         borderBottom: `1px solid ${C.border}`,
-        borderTop: `4px solid ${C.success}`
+        borderTop: `1px solid ${C.border}`
       }}>
         <Container>
           <VStack spacing={2} mb={8} align="center" textAlign="center">
             <Badge bg={C.success} color="white" fontSize="xs" fontWeight="700" px={3} py={1}>
               {t('homepage.forProfessionalBuyers')}
             </Badge>
-            <Heading size="lg" fontWeight="900" style={{
-              background: `linear-gradient(135deg, ${C.success} 0%, #059669 100%)`,
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent',
-              backgroundClip: 'text'
-            }}>
+            <Heading size="lg" fontWeight="900" color={C.primary}>
               {t('homepage.forRetailers')}
             </Heading>
             <Text fontSize="sm" color={C.text} maxW="600px">
@@ -1299,19 +1176,19 @@ export default function HomePage() {
               </Text>
               <VStack align="start" spacing={3} mt={2}>
                 <HStack spacing={2}>
-                  <CheckCircle size={16} color="#059669" />
+                  <CheckCircle size={16} color={C.success} />
                   <Text fontSize="sm" fontWeight="500" color={C.primary}>{t('homepage.oneCatalog')}</Text>
                 </HStack>
                 <HStack spacing={2}>
-                  <CheckCircle size={16} color="#059669" />
+                  <CheckCircle size={16} color={C.success} />
                   <Text fontSize="sm" fontWeight="500" color={C.primary}>{t('homepage.comparePrices')}</Text>
                 </HStack>
                 <HStack spacing={2}>
-                  <CheckCircle size={16} color="#059669" />
+                  <CheckCircle size={16} color={C.success} />
                   <Text fontSize="sm" fontWeight="500" color={C.primary}>{t('homepage.trackOrders')}</Text>
                 </HStack>
                 <HStack spacing={2}>
-                  <CheckCircle size={16} color="#059669" />
+                  <CheckCircle size={16} color={C.success} />
                   <Text fontSize="sm" fontWeight="500" color={C.primary}>{t('homepage.consolidateInvoicing')}</Text>
                 </HStack>
               </VStack>
@@ -1353,11 +1230,11 @@ export default function HomePage() {
             {t('homepage.forManufacturers')}
           </Heading>
           <SimpleGrid columns={{ base: 1, md: 2 }} spacing={8} mb={8}>
-            <Box p={6} rounded="lg" bg="white" border="2px solid" borderColor={C.border}>
+            <Box p={6} rounded="lg" bg="white" border="1px solid" borderColor={C.border}>
               <HStack spacing={3} mb={4}>
                 <Flex w={10} h={10} rounded="lg" align="center" justify="center"
-                  style={{ background: '#06b6d440' }}>
-                  <Eye size={20} color="#06b6d4" />
+                  style={{ background: C.divider }}>
+                  <Eye size={20} color={C.primary} />
                 </Flex>
                 <Heading size="md" fontWeight="700" color={C.primary}>{t('homepage.seeYourMarket')}</Heading>
               </HStack>
@@ -1383,11 +1260,11 @@ export default function HomePage() {
                 </HStack>
               </VStack>
             </Box>
-            <Box p={6} rounded="lg" bg="white" border="2px solid" borderColor={C.warningBorder}>
+            <Box p={6} rounded="lg" bg="white" border="1px solid" borderColor={C.border}>
               <HStack spacing={3} mb={4}>
                 <Flex w={10} h={10} rounded="lg" align="center" justify="center"
-                  style={{ background: '#f5391640' }}>
-                  <Zap size={20} color={C.warning} />
+                  style={{ background: C.accentLight }}>
+                  <Zap size={20} color={C.accent} />
                 </Flex>
                 <Heading size="md" fontWeight="700" color={C.primary}>{t('destocking.title')}</Heading>
               </HStack>
@@ -1434,44 +1311,41 @@ export default function HomePage() {
           SELLER RECRUITMENT CTA BANNER
       ══════════════════════════════════════════════════════════════ */}
       <Box
-        bg={`linear-gradient(135deg, #7c3aed 0%, #a855f7 100%)`}
-        py={{ base: 8, md: 12 }}
+        bg={`linear-gradient(135deg, ${C.primary} 0%, ${C.primaryLight} 100%)`}
+        py={{ base: 9, md: 12 }}
         position="relative"
         overflow="hidden"
       >
-        <Box position="absolute" top={-50} right={-50} w="300px" h="300px"
-          rounded="full" opacity={0.1} style={{ background: 'white' }} />
         <Container>
-          <Flex align="center" justify="space-between" gap={8} position="relative" zIndex={2}>
-            <VStack align="start" spacing={4} flex={1}>
-              <Badge bg="white" color="#7c3aed" fontSize="sm" fontWeight="700" px={3} py={1}>
-                💼 {t('sellerCTA.title')}
-              </Badge>
-              <Heading size="lg" color="white" fontWeight="800">
+          <Flex align="center" justify="space-between" gap={{ base: 7, md: 10 }}
+            direction={{ base: 'column', md: 'row' }} textAlign={{ base: 'center', md: 'start' }}>
+            <VStack align={{ base: 'center', md: 'start' }} spacing={4} flex={1}>
+              <Heading size="lg" color="white" fontWeight="800" lineHeight={1.2} maxW="24ch">
                 {t('sellerCTA.title')}
               </Heading>
-              <Text color="white" opacity={0.95} fontSize={{ base: 'sm', md: 'md' }} fontWeight="500">
+              <Text color="rgba(255,255,255,0.78)" fontSize={{ base: 'sm', md: 'md' }} maxW="52ch">
                 {t('sellerCTA.description')}
               </Text>
-              <Button size="md" bg="white" color="#7c3aed" fontWeight="700"
-                _hover={{ bg: 'gray.100' }}>
-                {t('sellerCTA.title')}
+              <Button size="md" bg={C.accent} color="white" fontWeight="700"
+                _hover={{ bg: C.accentBorder, color: C.primary }} transition="all 0.2s"
+                onClick={() => navigate('/auth')}>
+                {t('hero.secondaryAnon')}
               </Button>
             </VStack>
-            <Box display={{ base: 'none', md: 'block' }} textAlign="right">
-              <VStack spacing={4} align="end">
-                <HStack spacing={2}>
-                  <Award size={24} color="white" />
+            <Box display={{ base: 'none', md: 'block' }}>
+              <VStack spacing={4} align="start">
+                <HStack spacing={3} align="start">
+                  <Award size={22} color={C.accentBorder} />
                   <VStack spacing={0} align="start">
                     <Text fontWeight="700" color="white" fontSize="sm">{t('sellerCTA.verifiedBadge')}</Text>
-                    <Text fontSize="xs" color="white" opacity={0.8}>{t('sellerCTA.fullCredibility')}</Text>
+                    <Text fontSize="xs" color="rgba(255,255,255,0.7)">{t('sellerCTA.fullCredibility')}</Text>
                   </VStack>
                 </HStack>
-                <HStack spacing={2}>
-                  <Eye size={24} color="white" />
+                <HStack spacing={3} align="start">
+                  <Eye size={22} color={C.accentBorder} />
                   <VStack spacing={0} align="start">
                     <Text fontWeight="700" color="white" fontSize="sm">{t('sellerCTA.marketIntel')}</Text>
-                    <Text fontSize="xs" color="white" opacity={0.8}>{t('sellerCTA.seeRealtime')}</Text>
+                    <Text fontSize="xs" color="rgba(255,255,255,0.7)">{t('sellerCTA.seeRealtime')}</Text>
                   </VStack>
                 </HStack>
               </VStack>
@@ -1486,7 +1360,7 @@ export default function HomePage() {
       <Box bg="white" py={7} style={{ borderBottom: `1px solid ${C.border}` }}>
         <Container>
           <Heading size="sm" fontWeight="800" mb={6} textAlign="center" style={{ color: C.textMuted }}>
-            How Stock212 Works for You
+            {t('process.heading')}
           </Heading>
         </Container>
         <Box style={{ position: 'relative', overflow: 'hidden', width: '100%' }}>
@@ -1549,6 +1423,8 @@ export default function HomePage() {
                 placeholder={t('newsletter.placeholder')}
                 style={{
                   flex: 1,
+                  minWidth: 0,
+                  minHeight: '44px',
                   padding: '10px 14px',
                   borderRadius: '6px',
                   border: 'none',
@@ -1556,7 +1432,7 @@ export default function HomePage() {
                   outline: 'none',
                 }}
               />
-              <Button size="sm" bg={C.accent} color="white" fontWeight="700"
+              <Button size="sm" h="44px" flexShrink={0} bg={C.accent} color="white" fontWeight="700"
                 _hover={{ opacity: 0.9 }}>
                 {t('newsletter.subscribe')}
               </Button>
@@ -1573,7 +1449,7 @@ export default function HomePage() {
       ══════════════════════════════════════════════════════════════ */}
       <Box bg="white" py={9} style={{
         borderBottom: `1px solid ${C.border}`,
-        borderTop: `4px solid ${C.primary}`
+        borderTop: `1px solid ${C.border}`
       }}>
         <Container>
           <VStack spacing={8} align="center" textAlign="center" mb={8}>
@@ -1581,18 +1457,13 @@ export default function HomePage() {
               <Badge bg={C.primary} color={C.accent} fontSize="xs" fontWeight="700" px={3} py={1}>
                 {t('process.title')}
               </Badge>
-              <Heading size="lg" fontWeight="900" style={{
-                background: `linear-gradient(135deg, ${C.primary} 0%, ${C.primaryMid} 100%)`,
-                WebkitBackgroundClip: 'text',
-                WebkitTextFillColor: 'transparent',
-                backgroundClip: 'text'
-              }}>{t('process.heading')}</Heading>
+              <Heading size="lg" fontWeight="900" color={C.primary}>{t('process.heading')}</Heading>
               <Text fontSize="md" color={C.text} maxW="600px">
                 {t('process.description')}
               </Text>
             </VStack>
           </VStack>
-          <SimpleGrid columns={{ base: 1, md: 2, lg: 4 }} spacing={6}>
+          <SimpleGrid columns={{ base: 1, md: 2, lg: 4 }} spacing={{ base: 3, md: 6 }}>
             <ProcessStep
               number={1}
               icon={Globe}
@@ -1626,19 +1497,14 @@ export default function HomePage() {
       ══════════════════════════════════════════════════════════════ */}
       <Box bg={C.bgLight} py={9} style={{
         borderBottom: `1px solid ${C.border}`,
-        borderTop: `4px solid ${C.warning}`
+        borderTop: `1px solid ${C.border}`
       }}>
         <Container>
           <VStack spacing={3} mb={8} align="center" textAlign="center">
             <Badge bg={C.warning} color="white" fontSize="xs" fontWeight="700" px={3} py={1}>
               {t('features.title')}
             </Badge>
-            <Heading size="lg" fontWeight="900" style={{
-              background: `linear-gradient(135deg, ${C.warning} 0%, ${C.orange} 100%)`,
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent',
-              backgroundClip: 'text'
-            }}>
+            <Heading size="lg" fontWeight="900" color={C.primary}>
               {t('features.heading')}
             </Heading>
             <Text fontSize="md" color={C.text} maxW="600px">
@@ -1646,33 +1512,35 @@ export default function HomePage() {
             </Text>
           </VStack>
           <SimpleGrid columns={{ base: 1, md: 2, lg: 4 }} spacing={4}>
+            {/* One accent across all four: this is the trust section, and trust
+                reads navy in this identity. The icons carry the difference. */}
             <FeatureCard
               icon={CheckCircle}
               title={t('features.verifiedSellers')}
               description={t('features.verifiedSellersDesc')}
-              bgColor={`#10b98110`}
-              accentColor="#10b981"
+              bgColor={C.bgAlt}
+              accentColor={C.primary}
             />
             <FeatureCard
               icon={Snowflake}
               title={t('features.freshGuarantee')}
               description={t('features.freshGuaranteeDesc')}
-              bgColor={`#06b6d410`}
-              accentColor="#06b6d4"
+              bgColor={C.bgAlt}
+              accentColor={C.primary}
             />
             <FeatureCard
               icon={TrendingDown}
               title={t('features.bulkDiscounts')}
               description={t('features.bulkDiscountsDesc')}
-              bgColor={`#f5951610`}
-              accentColor="#f59516"
+              bgColor={C.bgAlt}
+              accentColor={C.primary}
             />
             <FeatureCard
               icon={Globe}
               title={t('features.wideNetwork')}
               description={t('features.wideNetworkDesc')}
-              bgColor={`#8b5cf610`}
-              accentColor="#8b5cf6"
+              bgColor={C.bgAlt}
+              accentColor={C.primary}
             />
           </SimpleGrid>
         </Container>
