@@ -4,7 +4,7 @@ import { Box, Button, Container, Flex, Heading, HStack, Image, SimpleGrid, Skele
 import { ChevronRight, ShieldCheck, ShoppingCart, Layers } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
-import { addToCart, notifyCartChanged } from '../../lib/cart';
+import { addToCart } from '../../lib/cart';
 import { ProductCard, ProductRail } from './ProductCard';
 import type { Product } from '../../types';
 
@@ -104,7 +104,7 @@ export function OrderAgainSection() {
     });
     setBusyId(null);
     if (error) toast({ title: error, status: 'error', duration: 3000 });
-    else { notifyCartChanged(); toast({ title: 'Ajouté au panier', status: 'success', duration: 2000 }); }
+    else { toast({ title: 'Ajouté au panier', status: 'success', duration: 2000 }); }
   }
 
   if (!loading && products.length === 0) return null;

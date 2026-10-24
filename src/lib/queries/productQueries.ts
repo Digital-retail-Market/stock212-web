@@ -13,7 +13,7 @@ export async function getAllProductsWithImages(limit = 100) {
     .limit(limit);
 
   if (error) throw error;
-  return (data as Product[]) ?? [];
+  return (data as unknown as Product[]) ?? [];
 }
 
 /**
@@ -29,7 +29,7 @@ export async function getProductsByCategoryWithImages(categoryId: string, limit 
     .limit(limit);
 
   if (error) throw error;
-  return (data as Product[]) ?? [];
+  return (data as unknown as Product[]) ?? [];
 }
 
 /**
@@ -45,7 +45,7 @@ export async function getProductsBySellerWithImages(sellerOrgId: string, limit =
     .limit(limit);
 
   if (error) throw error;
-  return (data as Product[]) ?? [];
+  return (data as unknown as Product[]) ?? [];
 }
 
 /**
@@ -76,5 +76,5 @@ export async function searchProductsWithImages(query: string, limit = 30) {
     .limit(limit);
 
   if (error) throw error;
-  return (data as Product[]) ?? [];
+  return (data as unknown as Product[]) ?? [];
 }
