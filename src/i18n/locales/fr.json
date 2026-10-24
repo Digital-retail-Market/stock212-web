@@ -1,4 +1,9 @@
 {
+  "announce": {
+    "newSellers": "De nouveaux vendeurs chaque jour",
+    "freeShipping": "Livraison offerte dès 500 MAD",
+    "trackOrders": "Suivez toutes vos commandes au même endroit"
+  },
   "common": {
     "seeAll": "Voir tout",
     "seeMore": "Voir plus",
@@ -80,6 +85,7 @@
     "title": "Catégories",
     "seeAll": "Toutes les catégories",
     "names": {
+      "Épicerie sèche": "Épicerie sèche",
       "Boissons": "Boissons",
       "Produits laitiers": "Produits laitiers",
       "Boucherie & Charcuterie": "Boucherie & Charcuterie",
@@ -134,6 +140,7 @@
     "seeAll": "Voir tout"
   },
   "badges": {
+    "topRated": "Mieux notés",
     "new": "Nouveau",
     "promo": "Promo",
     "destock": "Déstockage",
@@ -481,7 +488,8 @@
     "title": "Restez à jour avec les tendances du marché",
     "description": "Recevez des offres exclusives, de nouveaux produits et des analyses de marché livrées à votre boîte de réception.",
     "placeholder": "Entrez votre email",
-    "noSpam": "Pas de spam. Désinscrivez-vous à tout moment. Consultez notre politique de confidentialité."
+    "noSpam": "Pas de spam. Désinscrivez-vous à tout moment. Consultez notre politique de confidentialité.",
+    "subscribe": "S'abonner"
   },
   "process": {
     "title": "NOTRE PROCESSUS",

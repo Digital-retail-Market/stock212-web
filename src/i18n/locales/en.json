@@ -1,4 +1,9 @@
 {
+  "announce": {
+    "newSellers": "New sellers join daily",
+    "freeShipping": "Free shipping over 500 MAD",
+    "trackOrders": "Track every order in one place"
+  },
   "common": {
     "seeAll": "See All",
     "seeMore": "See More",
@@ -79,6 +84,7 @@
     "title": "Categories",
     "seeAll": "All Categories",
     "names": {
+      "Épicerie sèche": "Dry Grocery",
       "Boissons": "Beverages",
       "Produits laitiers": "Dairy Products",
       "Boucherie & Charcuterie": "Meat & Charcuterie",
@@ -133,6 +139,7 @@
     "seeAll": "See All"
   },
   "badges": {
+    "topRated": "Top rated",
     "new": "New",
     "promo": "Promo",
     "destock": "Clearance",
@@ -360,7 +367,8 @@
     "title": "Stay Updated with Market Trends",
     "description": "Get exclusive offers, new products, and market insights delivered to your inbox.",
     "placeholder": "Enter your email",
-    "noSpam": "No spam. Unsubscribe anytime. View our Privacy Policy."
+    "noSpam": "No spam. Unsubscribe anytime. View our Privacy Policy.",
+    "subscribe": "Subscribe"
   },
   "process": {
     "title": "OUR PROCESS",
