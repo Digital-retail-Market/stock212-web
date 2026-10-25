@@ -908,7 +908,7 @@ export default function StorefrontLayout({ children }: { children: React.ReactNo
                   _hover={{ bg: 'gray.50', color: 'gray.900' }}
                   onClick={() => navigate('/auth')}
                 >
-                  Se Connecter
+                  {t('footer.login')}
                 </Button>
                 <Button
                   size="sm" colorScheme="blue" rounded="lg" fontWeight="600" px={4}
@@ -919,7 +919,7 @@ export default function StorefrontLayout({ children }: { children: React.ReactNo
                   transition="all 0.15s"
                   onClick={() => navigate('/auth')}
                 >
-                  S'inscrire
+                  {t('header.signup')}
                 </Button>
               </HStack>
             )}
