@@ -5,6 +5,7 @@
     "trackOrders": "Track every order in one place"
   },
   "common": {
+    "close": "Close",
     "seeAll": "See All",
     "seeMore": "See More",
     "loading": "Loading...",
@@ -14,6 +15,7 @@
     "search": "Search"
   },
   "header": {
+    "supplierLogin": "Supplier login",
     "searchPlaceholder": "Search products, brands...",
     "login": "Login",
     "signup": "Sign Up",
@@ -462,5 +464,43 @@
     "productName": "Product Name",
     "rating": "Rating",
     "clear": "Clear"
+  },
+  "home": {
+    "addedToCart": "Added to cart",
+    "orderAgain": "Order again",
+    "bestSellers": "Best sellers",
+    "usualProducts": "Your usual products",
+    "reorder": "Reorder",
+    "add": "Add",
+    "bulkTitle": "Buy in bulk, pay less",
+    "bulkBadge": "Volume pricing",
+    "suppliersTitle": "Verified suppliers",
+    "suppliersBadge": "Trusted sellers",
+    "defaultCity": "Morocco",
+    "productCount": "{{count}} products",
+    "verified": "Verified",
+    "businessTitle": "Shop by business type",
+    "businessBadge": "Where to start?",
+    "business": {
+      "grocery": "Grocery store",
+      "restaurant": "Hotel / Restaurant",
+      "cafe": "Café",
+      "bakery": "Bakery",
+      "caterer": "Caterer"
+    },
+    "flashTitle": "Flash sales",
+    "daysShort": "{{count}}d",
+    "seller": "Seller",
+    "tierSaving": "-{{pct}}% from {{qty}}",
+    "lowStock": "Only {{count}} left in stock",
+    "playVideo": "Play: {{title}}",
+    "discover": "Discover",
+    "previous": "Previous",
+    "next": "Next",
+    "rows": {
+      "drinks": "Top Drinks & Refreshments",
+      "grocery": "Dry Groceries & Essentials",
+      "fruits": "Fresh Fruits & Vegetables"
+    }
   }
 }

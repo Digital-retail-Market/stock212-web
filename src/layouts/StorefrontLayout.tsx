@@ -308,7 +308,7 @@ export function SearchAutocomplete({ size = 'md' }: { size?: 'sm' | 'md' | 'lg' 
                       ) : (
                         <HStack spacing={1}>
                           <Lock size={11} color="#9CA3AF" />
-                          <Text fontSize="xs" color="gray.400">Prix</Text>
+                          <Text fontSize="xs" color="gray.400">{t('common.price')}</Text>
                         </HStack>
                       )}
                     </Box>
@@ -494,7 +494,7 @@ function ComparatorFloat() {
   const navigate = useNavigate();
   if (items.length === 0) return null;
   return (
-    <Box position="fixed" bottom={6} right={6} zIndex={500}>
+    <Box position="fixed" bottom={{ base: 'calc(70px + env(safe-area-inset-bottom, 0px))', md: 6 }} insetEnd={{ base: 4, md: 6 }} zIndex={500}>
       <Button
         style={{ background: N.navy, color: 'white', boxShadow: '0 6px 24px rgba(13,31,56,0.4)' }}
         rounded="full" leftIcon={<Scale size={15} />}
@@ -899,7 +899,7 @@ export default function StorefrontLayout({ children }: { children: React.ReactNo
                   _hover={{ bg: N.amber10 }}
                   onClick={() => navigate('/auth?role=seller')}
                 >
-                  Connexion fournisseur
+                  {t('header.supplierLogin')}
                 </Button>
                 <Button
                   size="sm" variant="ghost" color="gray.600" fontWeight="500"
@@ -1150,7 +1150,7 @@ export default function StorefrontLayout({ children }: { children: React.ReactNo
                     onClick={() => { navigate('/auth'); onClose(); }}>{t('footer.login')}</Button>
                   <Button w="full" variant="outline" rounded="full" size="sm"
                     borderColor={N.amber} color={N.amber} leftIcon={<Store size={14} />}
-                    onClick={() => { navigate('/auth?role=seller'); onClose(); }}>Connexion fournisseur</Button>
+                    onClick={() => { navigate('/auth?role=seller'); onClose(); }}>{t('header.supplierLogin')}</Button>
                 </VStack>
               )}
             </VStack>
@@ -1168,7 +1168,7 @@ export default function StorefrontLayout({ children }: { children: React.ReactNo
             <Box flex={1}>
               <SearchAutocomplete size="md" />
             </Box>
-            <IconButton aria-label="Fermer" icon={<X size={18} />} variant="ghost" rounded="full"
+            <IconButton aria-label={t('common.close')} icon={<X size={18} />} variant="ghost" rounded="full"
               minW="44px" minH="44px" onClick={onMobSearchClose} />
           </Flex>
         </Box>
@@ -1199,8 +1199,8 @@ export default function StorefrontLayout({ children }: { children: React.ReactNo
 
       {/* Page content — homepage gets full-bleed (no maxW / px) — flex="1" pousse le footer en bas */}
       {loc.pathname === '/'
-        ? <Box flex="1" bg="white" pb={{ base: '58px', md: 0 }}>{children}</Box>
-        : <Box flex="1" w="100%" maxW="1400px" mx="auto" px={4} py={6} pb={{ base: '70px', md: 6 }}>{children}</Box>
+        ? <Box flex="1" bg="white" pb={{ base: 'calc(58px + env(safe-area-inset-bottom, 0px))', md: 0 }}>{children}</Box>
+        : <Box flex="1" w="100%" maxW="1400px" mx="auto" px={4} py={6} pb={{ base: 'calc(70px + env(safe-area-inset-bottom, 0px))', md: 6 }}>{children}</Box>
       }
 
       {/* Comparator floating button */}

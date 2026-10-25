@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Box, Button, Container, Flex, Heading, HStack, Image, SimpleGrid, Skeleton, Text, useToast } from '@chakra-ui/react';
+import { useTranslation } from 'react-i18next';
+import { Box, Button, Container, Flex, Heading, HStack, Image, Skeleton, Text, useToast } from '@chakra-ui/react';
 import { ChevronRight, ShieldCheck, ShoppingCart, Layers } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
@@ -13,33 +14,42 @@ const AMBER = '#c97d1a';
 const AMBER_BORDER = '#fbbf24';
 const BORDER = '#e2e8f0';
 const MUTED = '#64748b';
+// Section palette — tint + accent, distinct from the neighbouring sections.
+const THEME = {
+  orderAgain: { bg: '#ECFEFF', accent: '#0E7490' },
+  bulk:       { bg: '#F0FDF4', accent: '#15803D' },
+  business:   { bg: '#EEF2FF', accent: '#4338CA' },
+  suppliers:  { bg: '#F1F5F9', accent: NAVY },
+} as const;
+
 const PRODUCT_SELECT = '*, organisations(name), price_tiers(*)';
 
 function firstTier(p: Product) {
   return p.price_tiers?.slice().sort((a, b) => a.qty_min - b.qty_min)[0] ?? null;
 }
 
-function SectionHead({ title, badge, to }: { title: string; badge?: string; to?: string }) {
+function SectionHead({ title, badge, to, color = AMBER }: { title: string; badge?: string; to?: string; color?: string }) {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   return (
-    <Flex align="flex-end" justify="space-between" mb={6} gap={3}>
+    <Flex align="flex-end" justify="space-between" mb={{ base: 3, md: 6 }} gap={3}>
       <Flex align="stretch" gap={3} minW={0}>
-        <Box w="4px" rounded="full" flexShrink={0} style={{ background: AMBER }} />
+        <Box w="4px" rounded="full" flexShrink={0} style={{ background: color }} />
         <Box minW={0}>
           {badge && (
-            <Text fontSize="11px" fontWeight="800" letterSpacing="0.08em" textTransform="uppercase"
-              mb={0.5} style={{ color: AMBER }}>{badge}</Text>
+            <Text fontSize={{ base: '10px', md: '11px' }} fontWeight="800" letterSpacing="0.08em" textTransform="uppercase"
+              mb={0.5} style={{ color }}>{badge}</Text>
           )}
-          <Heading as="h2" fontSize={{ base: 'xl', md: '2xl' }} fontWeight="800" lineHeight="1.2" letterSpacing="-0.01em" color={NAVY}>
+          <Heading as="h2" fontSize={{ base: 'lg', md: '2xl' }} fontWeight="800" lineHeight="1.2" letterSpacing="-0.01em" color={NAVY}>
             {title}
           </Heading>
         </Box>
       </Flex>
       {to && (
-        <Button variant="ghost" size="sm" fontWeight="600" fontSize="sm" color="#334155" h={{ base: '44px', md: 8 }} flexShrink={0}
-          _hover={{ color: AMBER, bg: 'transparent' }} rightIcon={<ChevronRight size={13} />}
+        <Button variant="ghost" size="sm" fontWeight="600" fontSize="sm" color={color} h={{ base: '44px', md: 8 }} flexShrink={0}
+          _hover={{ bg: 'blackAlpha.50' }} rightIcon={<ChevronRight size={13} />}
           onClick={() => navigate(to)}>
-          Voir tout
+          {t('common.seeAll')}
         </Button>
       )}
     </Flex>
@@ -56,6 +66,7 @@ function ProductTile({ product, footer, action }: {
 
 // ── 1. Commander à nouveau / Meilleures ventes ───────────────────────────────
 export function OrderAgainSection() {
+  const { t } = useTranslation();
   const { activeOrg } = useAuth();
   const toast = useToast();
   const [products, setProducts] = useState<Product[]>([]);
@@ -104,16 +115,16 @@ export function OrderAgainSection() {
     });
     setBusyId(null);
     if (error) toast({ title: error, status: 'error', duration: 3000 });
-    else { notifyCartChanged(); toast({ title: 'Ajouté au panier', status: 'success', duration: 2000 }); }
+    else { notifyCartChanged(); toast({ title: t('home.addedToCart'), status: 'success', duration: 2000 }); }
   }
 
   if (!loading && products.length === 0) return null;
   return (
-    <Box bg="white" py={7} style={{ borderBottom: `1px solid ${BORDER}` }}>
+    <Box bg={THEME.orderAgain.bg} py={{ base: 5, md: 7 }} style={{ borderBottom: `1px solid ${BORDER}` }}>
       <Container maxW="1400px">
-        <SectionHead
-          title={isReorder ? 'Commander à nouveau' : 'Meilleures ventes'}
-          badge={isReorder ? 'Vos produits habituels' : 'Top rated'}
+        <SectionHead color={THEME.orderAgain.accent}
+          title={isReorder ? t('home.orderAgain') : t('home.bestSellers')}
+          badge={isReorder ? t('home.usualProducts') : t('badges.topRated')}
           to="/catalog" />
         <ProductRail>
           {loading
@@ -123,7 +134,7 @@ export function OrderAgainSection() {
                   action={activeOrg ? (
                     <Button size="xs" w="full" leftIcon={<ShoppingCart size={12} />} bg={AMBER} color="white"
                       _hover={{ bg: '#a96510' }} isLoading={busyId === p.id} onClick={() => quickAdd(p)}>
-                      {isReorder ? 'Recommander' : 'Ajouter'}
+                      {isReorder ? t('home.reorder') : t('home.add')}
                     </Button>
                   ) : undefined} />
               ))}
@@ -135,6 +146,7 @@ export function OrderAgainSection() {
 
 // ── 2. Offres par quantité (paliers de prix) ─────────────────────────────────
 export function BulkDealsSection() {
+  const { t } = useTranslation();
   const [deals, setDeals] = useState<{ product: Product; pct: number; qty: number }[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -156,9 +168,9 @@ export function BulkDealsSection() {
 
   if (!loading && deals.length === 0) return null;
   return (
-    <Box bg="#f8fafc" py={7} style={{ borderBottom: `1px solid ${BORDER}` }}>
+    <Box bg={THEME.bulk.bg} py={{ base: 5, md: 7 }} style={{ borderBottom: `1px solid ${BORDER}` }}>
       <Container maxW="1400px">
-        <SectionHead title="Achetez en gros, payez moins" badge="Prix dégressifs" to="/catalog" />
+        <SectionHead color={THEME.bulk.accent} title={t('home.bulkTitle')} badge={t('home.bulkBadge')} to="/catalog" />
         <ProductRail>
           {loading
             ? Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} h="230px" rounded="lg" />)
@@ -182,6 +194,7 @@ function avatarColor(name: string) {
 interface Supplier { id: string; name: string; city: string | null; count: number }
 
 export function TopSuppliersSection() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [loading, setLoading] = useState(true);
@@ -206,30 +219,30 @@ export function TopSuppliersSection() {
 
   if (!loading && suppliers.length === 0) return null;
   return (
-    <Box bg="white" py={7} style={{ borderBottom: `1px solid ${BORDER}` }}>
+    <Box bg={THEME.suppliers.bg} py={{ base: 5, md: 7 }} style={{ borderBottom: `1px solid ${BORDER}` }}>
       <Container maxW="1400px">
-        <SectionHead title="Fournisseurs vérifiés" badge="Vendeurs de confiance" />
-        <SimpleGrid columns={{ base: 2, md: 3, lg: 6 }} spacing={4}>
+        <SectionHead color={THEME.suppliers.accent} title={t('home.suppliersTitle')} badge={t('home.suppliersBadge')} />
+        <ProductRail columns={6}>
           {loading
             ? Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} h="130px" rounded="lg" />)
             : suppliers.map((s) => (
-                <Flex key={s.id} direction="column" align="center" gap={1.5} p={4} rounded="lg" textAlign="center"
+                <Flex key={s.id} direction="column" align="center" gap={1.5} p={{ base: 3, md: 4 }} bg="white" rounded="lg" textAlign="center"
                   border="1px solid" borderColor={BORDER} cursor="pointer"
                   _hover={{ shadow: 'md', borderColor: AMBER_BORDER }} transition="all 0.2s"
                   onClick={() => navigate(`/catalog?q=${encodeURIComponent(s.name)}`)}>
-                  <Flex w={12} h={12} rounded="full" align="center" justify="center" style={{ background: avatarColor(s.name) }} color="white"
+                  <Flex w={{ base: 10, md: 12 }} h={{ base: 10, md: 12 }} rounded="full" align="center" justify="center" style={{ background: avatarColor(s.name) }} color="white"
                     fontWeight="800" fontSize="lg">
                     {s.name.charAt(0).toUpperCase()}
                   </Flex>
                   <Text fontWeight="700" fontSize="sm" color={NAVY} noOfLines={1}>{s.name}</Text>
-                  <Text fontSize="xs" color={MUTED}>{s.city ?? 'Maroc'} · {s.count} produits</Text>
+                  <Text fontSize="xs" color={MUTED}>{s.city ?? t('home.defaultCity')} · {t('home.productCount', { count: s.count })}</Text>
                   <HStack spacing={1} color="#15803d">
                     <ShieldCheck size={12} />
-                    <Text fontSize="10px" fontWeight="700">Vérifié</Text>
+                    <Text fontSize="10px" fontWeight="700">{t('home.verified')}</Text>
                   </HStack>
                 </Flex>
               ))}
-        </SimpleGrid>
+        </ProductRail>
       </Container>
     </Box>
   );
@@ -237,27 +250,28 @@ export function TopSuppliersSection() {
 
 // ── 5. Par type d'activité ───────────────────────────────────────────────────
 const BUSINESS_TYPES = [
-  { label: 'Épicerie', image: '/business/epicerie.png', q: 'conserve' },
-  { label: 'Hôtel / Restaurant', image: '/business/restaurant.png', q: 'huile' },
-  { label: 'Café', image: '/business/cafe.png', q: 'café' },
-  { label: 'Boulangerie', image: '/business/boulangerie.png', q: 'farine' },
-  { label: 'Traiteur', image: '/business/traiteur.png', q: 'sauce' },
+  { key: 'grocery', image: '/business/epicerie.png', q: 'conserve' },
+  { key: 'restaurant', image: '/business/restaurant.png', q: 'huile' },
+  { key: 'cafe', image: '/business/cafe.png', q: 'café' },
+  { key: 'bakery', image: '/business/boulangerie.png', q: 'farine' },
+  { key: 'caterer', image: '/business/traiteur.png', q: 'sauce' },
 ];
 
 export function BusinessTypeSection() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   return (
-    <Box bg="#f8fafc" py={7} style={{ borderBottom: `1px solid ${BORDER}` }}>
+    <Box bg={THEME.business.bg} py={{ base: 5, md: 7 }} style={{ borderBottom: `1px solid ${BORDER}` }}>
       <Container maxW="1400px">
-        <SectionHead title="Achetez selon votre activité" badge="Par où commencer ?" />
+        <SectionHead color={THEME.business.accent} title={t('home.businessTitle')} badge={t('home.businessBadge')} />
         <ProductRail>
           {BUSINESS_TYPES.map((b) => (
-            <Flex key={b.label} direction="column" align="center" bg="white" overflow="hidden"
+            <Flex key={b.key} direction="column" align="center" bg="white" overflow="hidden"
               rounded="lg" border="1px solid" borderColor={BORDER} cursor="pointer"
-              _hover={{ shadow: 'md', borderColor: AMBER_BORDER, transform: 'translateY(-3px)' }} transition="all 0.2s"
+              _hover={{ shadow: 'md', borderColor: AMBER_BORDER, transform: 'translateY(-3px)' }} _active={{ transform: 'scale(0.97)' }} transition="all 0.2s"
               onClick={() => navigate(`/catalog?q=${encodeURIComponent(b.q)}`)}>
-              <Image src={b.image} alt={b.label} loading="lazy" w="full" h={{ base: '120px', md: '150px' }} objectFit="cover" />
-              <Text fontWeight="700" fontSize="sm" color={NAVY} py={3} textAlign="center">{b.label}</Text>
+              <Image src={b.image} alt={t(`home.business.${b.key}`)} loading="lazy" w="full" h={{ base: '84px', md: '150px' }} objectFit="cover" />
+              <Text fontWeight="700" fontSize={{ base: 'xs', md: 'sm' }} color={NAVY} py={{ base: 2, md: 3 }} px={1} textAlign="center" noOfLines={1}>{t(`home.business.${b.key}`)}</Text>
             </Flex>
           ))}
         </ProductRail>
@@ -279,10 +293,11 @@ function useCountdown(endMs: number | null) {
   const pad = (v: number) => String(v).padStart(2, '0');
   const days = Math.floor(total / 86400);
   const clock = `${pad(Math.floor((total % 86400) / 3600))}:${pad(Math.floor((total % 3600) / 60))}:${pad(total % 60)}`;
-  return { expired: total === 0, label: days > 0 ? `${days}j ${clock}` : clock };
+  return { expired: total === 0, days, clock };
 }
 
 export function FlashDealsSection() {
+  const { t } = useTranslation();
   const [deals, setDeals] = useState<{ product: Product; pct: number }[]>([]);
   const [endMs, setEndMs] = useState<number | null>(null);
 
@@ -310,13 +325,13 @@ export function FlashDealsSection() {
   const countdown = useCountdown(endMs);
   if (deals.length === 0 || countdown?.expired) return null;
   return (
-    <Box py={7} style={{ background: 'linear-gradient(135deg, #991b1b, #b91c1c)', borderBottom: `3px solid ${AMBER_BORDER}` }}>
+    <Box py={{ base: 5, md: 7 }} style={{ background: 'linear-gradient(135deg, #991b1b, #b91c1c)', borderBottom: `3px solid ${AMBER_BORDER}` }}>
       <Container maxW="1400px">
         <Flex align="center" justify="space-between" mb={5} wrap="wrap" gap={3}>
           <HStack spacing={3}>
-            <Heading size="md" fontWeight="900" color="white" textTransform="uppercase">Ventes éclair</Heading>
+            <Heading size="md" fontWeight="900" color="white" textTransform="uppercase">{t('home.flashTitle')}</Heading>
             <Box rounded="full" px={3} py={1} bg="rgba(0,0,0,0.3)" color="white">
-              <Text fontSize="xs" fontWeight="700" fontFamily="'JetBrains Mono', monospace">{countdown?.label}</Text>
+              <Text fontSize="xs" fontWeight="700" fontFamily="'JetBrains Mono', monospace">{countdown && (countdown.days > 0 ? `${t('home.daysShort', { count: countdown.days })} ${countdown.clock}` : countdown.clock)}</Text>
             </Box>
           </HStack>
         </Flex>

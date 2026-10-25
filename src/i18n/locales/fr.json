@@ -5,6 +5,7 @@
     "trackOrders": "Suivez toutes vos commandes au même endroit"
   },
   "common": {
+    "close": "Fermer",
     "seeAll": "Voir tout",
     "seeMore": "Voir plus",
     "loading": "Chargement...",
@@ -14,6 +15,7 @@
     "search": "Recherche"
   },
   "header": {
+    "supplierLogin": "Connexion fournisseur",
     "searchPlaceholder": "Rechercher produits, marques...",
     "login": "Connexion",
     "signup": "S'inscrire",
@@ -583,5 +585,43 @@
     "productName": "Nom du produit",
     "rating": "Évaluation",
     "clear": "Effacer"
+  },
+  "home": {
+    "addedToCart": "Ajouté au panier",
+    "orderAgain": "Commander à nouveau",
+    "bestSellers": "Meilleures ventes",
+    "usualProducts": "Vos produits habituels",
+    "reorder": "Recommander",
+    "add": "Ajouter",
+    "bulkTitle": "Achetez en gros, payez moins",
+    "bulkBadge": "Prix dégressifs",
+    "suppliersTitle": "Fournisseurs vérifiés",
+    "suppliersBadge": "Vendeurs de confiance",
+    "defaultCity": "Maroc",
+    "productCount": "{{count}} produits",
+    "verified": "Vérifié",
+    "businessTitle": "Achetez selon votre activité",
+    "businessBadge": "Par où commencer ?",
+    "business": {
+      "grocery": "Épicerie",
+      "restaurant": "Hôtel / Restaurant",
+      "cafe": "Café",
+      "bakery": "Boulangerie",
+      "caterer": "Traiteur"
+    },
+    "flashTitle": "Ventes éclair",
+    "daysShort": "{{count}}j",
+    "seller": "Vendeur",
+    "tierSaving": "-{{pct}}% dès {{qty}}",
+    "lowStock": "Plus que {{count}} en stock",
+    "playVideo": "Lire : {{title}}",
+    "discover": "Découvrir",
+    "previous": "Précédent",
+    "next": "Suivant",
+    "rows": {
+      "drinks": "Top Boissons & Rafraîchissements",
+      "grocery": "Épicerie Sèche & Essentiels",
+      "fruits": "Fruits & Légumes Frais"
+    }
   }
 }

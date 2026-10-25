@@ -5,6 +5,7 @@
     "trackOrders": "تتبّع كل طلباتك في مكان واحد"
   },
   "common": {
+    "close": "إغلاق",
     "seeAll": "عرض الكل",
     "seeMore": "المزيد",
     "loading": "جاري التحميل...",
@@ -14,6 +15,7 @@
     "search": "بحث"
   },
   "header": {
+    "supplierLogin": "دخول المورّدين",
     "searchPlaceholder": "ابحث عن منتجات، علامات تجارية...",
     "login": "تسجيل الدخول",
     "signup": "إنشاء حساب",
@@ -579,5 +581,43 @@
     "productName": "اسم المنتج",
     "rating": "التقييم",
     "clear": "إلغاء"
+  },
+  "home": {
+    "addedToCart": "تمت الإضافة إلى السلة",
+    "orderAgain": "اطلب مرة أخرى",
+    "bestSellers": "الأكثر مبيعاً",
+    "usualProducts": "منتجاتك المعتادة",
+    "reorder": "أعد الطلب",
+    "add": "أضف",
+    "bulkTitle": "اشترِ بالجملة وادفع أقل",
+    "bulkBadge": "أسعار متدرجة",
+    "suppliersTitle": "موردون موثَّقون",
+    "suppliersBadge": "بائعون موثوقون",
+    "defaultCity": "المغرب",
+    "productCount": "{{count}} منتج",
+    "verified": "موثَّق",
+    "businessTitle": "تسوّق حسب نشاطك",
+    "businessBadge": "من أين تبدأ؟",
+    "business": {
+      "grocery": "بقالة",
+      "restaurant": "فندق / مطعم",
+      "cafe": "مقهى",
+      "bakery": "مخبزة",
+      "caterer": "ممون حفلات"
+    },
+    "flashTitle": "عروض خاطفة",
+    "daysShort": "{{count}} ي",
+    "seller": "البائع",
+    "tierSaving": "‎-{{pct}}% ابتداءً من {{qty}}",
+    "lowStock": "بقي {{count}} فقط في المخزون",
+    "playVideo": "تشغيل: {{title}}",
+    "discover": "اكتشف",
+    "previous": "السابق",
+    "next": "التالي",
+    "rows": {
+      "drinks": "أفضل المشروبات والمرطبات",
+      "grocery": "البقالة الجافة والأساسيات",
+      "fruits": "فواكه وخضروات طازجة"
+    }
   }
 }
