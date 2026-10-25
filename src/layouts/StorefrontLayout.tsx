@@ -682,7 +682,7 @@ export default function StorefrontLayout({ children }: { children: React.ReactNo
               _hover={{ bg: 'gray.100', color: 'gray.900' }}
               onClick={() => navigate('/buyer/destockage')}
             >
-              Déstockage
+              {t('nav.destocking')}
             </Button>
             <Button
               variant="ghost" size="sm" fontWeight="500" fontSize="sm"
