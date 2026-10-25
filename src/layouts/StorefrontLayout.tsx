@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState, useEffect, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
@@ -16,7 +15,7 @@ import {
   Search, ShoppingCart, ChevronDown, Package, Menu as MenuIcon,
   LayoutDashboard, LogOut, Settings, Star, Truck, Phone, Mail,
   Facebook, Twitter, Linkedin, Instagram, Home, Globe,
-  ChevronRight, Lock, Scale, X, FileText, Heart, Zap,
+  ChevronRight, Lock, Scale, X, FileText, Heart, Zap, Store,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import i18n from '../i18n';
@@ -46,10 +45,31 @@ const N = {
   bgAlt:  '#f8fafc',
 };
 
+const PROMOS = [
+  { en: 'DISCOUNT', ar: 'خصم', percent: '30%', color: '#dc2626' },
+  { en: 'SALE', ar: 'تخفيض', percent: '50%', color: '#f59e0b' },
+  { en: 'OFFER', ar: 'عرض', percent: '25%', color: '#7c3aed' },
+  { en: 'FLASH SALE', ar: 'عرض فلاش', percent: '40%', color: '#ec4899' },
+  { en: 'CLEARANCE', ar: 'تصفية', percent: '60%', color: '#f59e0b' },
+  { en: 'PROMOTION', ar: 'ترويج', percent: '35%', color: '#06b6d4' },
+  { en: 'MEGA SALE', ar: 'بيع ضخم', percent: '70%', color: '#dc2626' },
+];
+
 // ─── helpers ──────────────────────────────────────────────────────────────────
 function CatIcon({ name, size = 16 }: { name: string; size?: number }) {
   const { Icon, color } = getCatStyle(name);
   return <Icon size={size} color={color} />;
+}
+
+// Shared breadcrumb label, so the linked and current-page variants of a
+// category crumb can be rendered as separate elements without repeating it.
+function CatCrumbLabel({ category }: { category: Category }) {
+  return (
+    <HStack spacing={1}>
+      <CatIcon name={category.name} size={12} />
+      <Text>{getCategoryLabel(category, i18n.language)}</Text>
+    </HStack>
+  );
 }
 
 // ─── SearchAutocomplete (self-contained, exportable) ─────────────────────────
@@ -101,7 +121,12 @@ export function SearchAutocomplete({ size = 'md' }: { size?: 'sm' | 'md' | 'lg' 
         supabase.from('categories').select('id, name, name_i18n, icon, image_url, description, parent_id, display_order, active')
           .eq('active', true).ilike('name', `%${query}%`).limit(4),
       ]);
-      setProducts((prodRes.data as Product[]) ?? []);
+      // supabase-js types an embedded one-to-many select as an array, so the
+      // inferred `organisations` is Organisation[] while Product declares a
+      // single Organisation. A many-to-one embed returns one object at
+      // runtime, so the shape is right and only the inference is off — hence
+      // the cast through unknown rather than loosening the Product type.
+      setProducts((prodRes.data as unknown as Product[]) ?? []);
       setMatchedCats((catRes.data as Category[]) ?? []);
       setLoading(false);
     }, 280);
@@ -395,24 +420,27 @@ export function CategoryBreadcrumb({ category, roots, subCategories, productName
             <BreadcrumbItem display={{ base: 'none', md: 'flex' }}>
               <BreadcrumbLink as={Link} to={`/catalog?category=${parentCat.id}`}
                 color="gray.500" _hover={{ color: 'blue.600' }}>
-                <HStack spacing={1}>
-                  <CatIcon name={parentCat.name} size={12} />
-                  <Text>{parentCat.name}</Text>
-                </HStack>
+                {/* Was printing the raw `name`, so the parent crumb stayed in
+                    French ("Food") next to a translated child crumb. */}
+                <CatCrumbLabel category={parentCat} />
               </BreadcrumbLink>
             </BreadcrumbItem>
           )}
+          {/* Rendered as two elements rather than one with a conditional
+              `as`: a span crumb takes no `to`, so the single-element form
+              was passing a prop that does not exist on it. */}
           {category && (
             <BreadcrumbItem isCurrentPage={!productName}>
-              <BreadcrumbLink as={productName ? Link : 'span'}
-                to={productName ? `/catalog?category=${category.id}` : undefined}
-                color={productName ? 'gray.500' : 'gray.800'} fontWeight={productName ? 'normal' : 'medium'}
-                _hover={productName ? { color: 'blue.600' } : undefined}>
-                <HStack spacing={1}>
-                  <CatIcon name={category.name} size={12} />
-                  <Text>{getCategoryLabel(category, i18n.language)}</Text>
-                </HStack>
-              </BreadcrumbLink>
+              {productName ? (
+                <BreadcrumbLink as={Link} to={`/catalog?category=${category.id}`}
+                  color="gray.500" fontWeight="normal" _hover={{ color: 'blue.600' }}>
+                  <CatCrumbLabel category={category} />
+                </BreadcrumbLink>
+              ) : (
+                <BreadcrumbLink as="span" color="gray.800" fontWeight="medium">
+                  <CatCrumbLabel category={category} />
+                </BreadcrumbLink>
+              )}
             </BreadcrumbItem>
           )}
           {productName && (
@@ -492,20 +520,11 @@ export default function StorefrontLayout({ children }: { children: React.ReactNo
   const [roots, setRoots] = useState<Category[]>([]);
   const [subs, setSubs] = useState<Category[]>([]);
   const [promoIdx, setPromoIdx] = useState(0);
-
-  const promos = [
-    { en: 'DISCOUNT', ar: 'خصم', percent: '30%', color: '#dc2626' },
-    { en: 'SALE', ar: 'تخفيض', percent: '50%', color: '#f59e0b' },
-    { en: 'OFFER', ar: 'عرض', percent: '25%', color: '#7c3aed' },
-    { en: 'FLASH SALE', ar: 'عرض فلاش', percent: '40%', color: '#ec4899' },
-    { en: 'CLEARANCE', ar: 'تصفية', percent: '60%', color: '#f59e0b' },
-    { en: 'PROMOTION', ar: 'ترويج', percent: '35%', color: '#06b6d4' },
-    { en: 'MEGA SALE', ar: 'بيع ضخم', percent: '70%', color: '#dc2626' },
-  ];
+  const promos = PROMOS;
 
   useEffect(() => {
     const interval = setInterval(() => {
-      setPromoIdx((prev) => (prev + 1) % promos.length);
+      setPromoIdx((prev) => (prev + 1) % PROMOS.length);
     }, 5000);
     return () => clearInterval(interval);
   }, []);
@@ -873,6 +892,16 @@ export default function StorefrontLayout({ children }: { children: React.ReactNo
             ) : (
               <HStack spacing={2}>
                 <Button
+                  size="sm" variant="outline" fontWeight="600" rounded="lg"
+                  display={{ base: 'none', md: 'flex' }}
+                  borderColor={N.amber} color={N.amber}
+                  leftIcon={<Store size={14} />}
+                  _hover={{ bg: N.amber10 }}
+                  onClick={() => navigate('/auth?role=seller')}
+                >
+                  Connexion fournisseur
+                </Button>
+                <Button
                   size="sm" variant="ghost" color="gray.600" fontWeight="500"
                   display={{ base: 'none', sm: 'flex' }}
                   leftIcon={<LogOut size={14} />}
@@ -895,18 +924,25 @@ export default function StorefrontLayout({ children }: { children: React.ReactNo
               </HStack>
             )}
             <Box w="1px" h="20px" bg="gray.200" display={{ base: 'none', md: 'block' }} mx={1} />
-            <IconButton
-              aria-label="Menu"
-              icon={<MenuIcon size={17} />}
-              variant="ghost"
-              display={{ base: 'flex', lg: 'none' }}
-              onClick={onOpen}
-              color="gray.600"
-              rounded="lg"
-              size="sm"
-              _hover={{ bg: 'gray.100' }}
-            />
           </HStack>
+
+          {/* Outside the HStack above on purpose: that group is display:none
+              below sm, and a hidden parent removes its whole subtree — so a
+              menu button nested inside it was unreachable on most phones,
+              taking the language switcher in the drawer down with it. */}
+          <IconButton
+            aria-label={t('header.menu')}
+            icon={<MenuIcon size={17} />}
+            variant="ghost"
+            display={{ base: 'flex', lg: 'none' }}
+            onClick={onOpen}
+            color="gray.600"
+            rounded="lg"
+            minW="44px"
+            minH="44px"
+            flexShrink={0}
+            _hover={{ bg: 'gray.100' }}
+          />
         </Flex>
 
       </Box>
@@ -1112,6 +1148,9 @@ export default function StorefrontLayout({ children }: { children: React.ReactNo
                     onClick={() => { navigate('/auth'); onClose(); }}>{t('footer.signUpFree')}</Button>
                   <Button w="full" variant="outline" rounded="full" size="sm"
                     onClick={() => { navigate('/auth'); onClose(); }}>{t('footer.login')}</Button>
+                  <Button w="full" variant="outline" rounded="full" size="sm"
+                    borderColor={N.amber} color={N.amber} leftIcon={<Store size={14} />}
+                    onClick={() => { navigate('/auth?role=seller'); onClose(); }}>Connexion fournisseur</Button>
                 </VStack>
               )}
             </VStack>

@@ -241,6 +241,8 @@ export interface CartItem {
   quantity: number;
   unit_price_computed: number | null;
   promotion_id: string | null;
+  lot_id?: string | null;
+  preferred_delivery_method?: string | null;
   products?: Product;
 }
 

@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { useEffect, useMemo, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import {
   Box, Flex, Grid, Heading, Text, VStack, HStack,
   Button, Image, Skeleton, SkeletonText, Divider, SimpleGrid,
@@ -20,6 +20,7 @@ import {
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import { addToCart as addToCartShared } from '../../lib/cart';
+import { rememberReturnPath } from '../../lib/signupRole';
 import { useComparator } from '../../contexts/ComparatorContext';
 import { useProductCampaigns } from '../../hooks/useMarketingStorefront';
 import ProductCampaignPanel from '../../components/marketing/ProductCampaignPanel';
@@ -109,6 +110,15 @@ const FRAGILITY_LABEL: Record<string, { label: string; color: string }> = {
 };
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
+// Quantité commandable : au moins le MOQ, et un multiple du colisage.
+function normalizeQty(q: number, moq: number, packSize: number): number {
+  const min = Math.max(1, moq || 1);
+  const pack = Math.max(1, packSize || 1);
+  let v = Number.isFinite(q) ? Math.max(Math.round(q), min) : min;
+  if (pack > 1) v = Math.ceil(v / pack) * pack;
+  return v;
+}
+
 function Section({
   id, title, icon: Icon, children,
 }: { id: string; title: string; icon: React.ElementType; children: React.ReactNode }) {
@@ -155,11 +165,17 @@ function Chip({ label, bg, color }: { label: string; bg: string; color: string }
   );
 }
 
+type LotRow = {
+  id: string; lot_number: string; qty_available: number;
+  expiry_date: string | null; specific_price: number | null;
+};
+
 // ── Main ───────────────────────────────────────────────────────────────────────
 export default function ProductDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { user, activeOrg } = useAuth();
+  const location = useLocation();
+  const { user, profile, activeOrg } = useAuth();
   const toast = useToast();
   const { addItem, removeItem, hasItem } = useComparator();
   const productCampaigns = useProductCampaigns(id);
@@ -168,42 +184,61 @@ export default function ProductDetailPage() {
   const [reviews, setReviews] = useState<ProductReview[]>([]);
   const [similar, setSimilar] = useState<SimilarProduct[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
   const [selectedImage, setSelectedImage] = useState(0);
   const [videoPlaying, setVideoPlaying] = useState(false);
   const [qty, setQty] = useState(1);
   const [selectedDelivery, setSelectedDelivery] = useState('');
-  const [addingToCart, setAddingToCart] = useState(false);
+  // null = aucun ajout en cours ; 'main' = bouton principal ; sinon id du lot DLC.
+  const [addingToCart, setAddingToCart] = useState<string | null>(null);
   const [recoDataset, setRecoDataset] = useState<OfferRankingDataset | null>(null);
-  const [lots, setLots] = useState<{
-    id: string; lot_number: string; qty_available: number;
-    expiry_date: string | null; specific_price: number | null;
-  }[]>([]);
+  const [lots, setLots] = useState<LotRow[]>([]);
 
   useEffect(() => {
     if (!id) return;
+    // Navigation vers un autre produit (ex. « Produits similaires ») : on repart
+    // d'un état vierge, et une réponse tardive du produit précédent est ignorée.
+    let cancelled = false;
+    setLoading(true);
+    setLoadError(false);
+    setProduct(null);
+    setReviews([]);
+    setLots([]);
+    setSimilar([]);
+    setSelectedImage(0);
+    setVideoPlaying(false);
+    setSelectedDelivery('');
+    window.scrollTo(0, 0);
+
     supabase
       .from('products')
       .select('*, organisations(*), categories(*), brands(*), price_tiers(*)')
       .eq('id', id).eq('status', 'active').maybeSingle()
-      .then(({ data }) => {
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error) { setLoadError(true); setLoading(false); return; }
         const p = data as Product;
         setProduct(p);
-        if (p?.moq) setQty(p.moq);
+        if (p) setQty(normalizeQty(p.moq, p.moq, p.pack_size));
         const methods = p?.delivery_methods ?? [];
         if (methods.length > 0) setSelectedDelivery(methods[0]);
+        else if (p) setSelectedDelivery(p.cold_chain_required ? 'cold_chain_express' : 'livraison_directe');
         setLoading(false);
       });
     supabase.from('product_reviews').select('*').eq('product_id', id)
       .order('created_at', { ascending: false }).limit(10)
-      .then(({ data }) => setReviews((data as ProductReview[]) ?? []));
+      .then(({ data }) => { if (!cancelled) setReviews((data as ProductReview[]) ?? []); });
     supabase.from('product_lots').select('id,lot_number,qty_available,expiry_date,specific_price')
       .eq('product_id', id).eq('active', true).gt('qty_available', 0)
       .order('expiry_date', { ascending: true, nullsFirst: false })
-      .then(({ data }) => setLots((data as any[]) ?? []));
-  }, [id]);
+      .then(({ data }) => { if (!cancelled) setLots((data as LotRow[]) ?? []); });
+    return () => { cancelled = true; };
+  }, [id, reloadKey]);
 
   useEffect(() => {
     if (!product?.id) return;
+    let cancelled = false;
     const BASE = 'id,name,images,currency,price_tiers(unit_price,qty_min),avg_rating,moq,brand_id,seller_org_id,ean';
     const queries = [
       product.brand_id
@@ -223,6 +258,7 @@ export default function ProductDetailPage() {
         : Promise.resolve([]),
     ];
     Promise.all(queries).then((batches) => {
+      if (cancelled) return;
       const seen = new Set<string>();
       const merged: SimilarProduct[] = [];
       for (const batch of batches)
@@ -230,6 +266,7 @@ export default function ProductDetailPage() {
           if (!seen.has(p.id)) { seen.add(p.id); merged.push(p as SimilarProduct); }
       setSimilar(merged.slice(0, 8));
     });
+    return () => { cancelled = true; };
   }, [product?.id, product?.brand_id, product?.seller_org_id, product?.category_id]);
 
   // Recommandation — classement (prix, livraison, qualité fournisseur, fraîcheur,
@@ -256,22 +293,56 @@ export default function ProductDetailPage() {
   const _q = sortedTiers.filter((t) => qty >= t.qty_min);
   const activeTier = _q[_q.length - 1] ?? sortedTiers[0];
 
-  async function addToCart(overridePrice?: number) {
-    if (!user || !activeOrg) { navigate('/auth'); return; }
+  function goToAuth(signup: boolean) {
+    // Retour sur ce produit après connexion (RedirectAuthenticated lit state.from)
+    // ou après l'onboarding pour une inscription.
+    if (signup) rememberReturnPath(location.pathname);
+    navigate(signup ? '/auth?mode=signup' : '/auth', { state: { from: location } });
+  }
+
+  function goToFinishSignup() {
+    navigate(profile?.onboarding_done ? '/pending-approval' : '/onboarding');
+  }
+
+  async function addToCart(lot?: LotRow) {
+    if (!user) { goToAuth(false); return; }
+    if (!activeOrg) { goToFinishSignup(); return; }
     if (!product) return;
-    setAddingToCart(true);
+
+    // Lot DLC : jamais plus que le stock du lot ; un lot plus petit que le MOQ
+    // se solde en entier. Sinon : MOQ + multiple du colisage.
+    const quantity = lot
+      ? Math.min(Math.max(qty, Math.min(product.moq, lot.qty_available)), lot.qty_available)
+      : normalizeQty(qty, product.moq, product.pack_size);
+    if (quantity !== qty) {
+      setQty(quantity);
+      toast({
+        title: 'Quantité ajustée',
+        description: lot
+          ? `${quantity} u disponibles sur le lot ${lot.lot_number}.`
+          : `Minimum ${product.moq} u, par colis de ${product.pack_size} u : ${quantity} u.`,
+        status: 'info', duration: 4000,
+      });
+    }
+
+    const eligible = sortedTiers.filter((t) => quantity >= t.qty_min);
+    const tierPrice = (eligible[eligible.length - 1] ?? sortedTiers[0])?.unit_price ?? null;
+
+    setAddingToCart(lot?.id ?? 'main');
     try {
       const { error } = await addToCartShared({
         buyerOrgId: activeOrg.id,
         productId: product.id,
-        quantity: qty,
-        unitPrice: overridePrice ?? activeTier?.unit_price ?? null,
+        quantity,
+        unitPrice: lot ? lot.specific_price : tierPrice,
+        lotId: lot?.id ?? null,
+        deliveryMethod: selectedDelivery || null,
       });
       if (error) throw new Error(error);
-      toast({ title: 'Ajouté au panier', description: `${qty} × ${product.name}`, status: 'success', duration: 3000 });
+      toast({ title: 'Ajouté au panier', description: `${quantity} × ${product.name}`, status: 'success', duration: 3000 });
     } catch (e: unknown) {
       toast({ title: 'Erreur', description: (e as { message?: string })?.message, status: 'error', duration: 5000 });
-    } finally { setAddingToCart(false); }
+    } finally { setAddingToCart(null); }
   }
 
   function embedUrl(url: string) {
@@ -291,6 +362,17 @@ export default function ProductDetailPage() {
   }
 
   if (loading) return <PageSkeleton />;
+  if (loadError) return (
+    <Flex direction="column" align="center" justify="center" minH="60vh" gap={4}>
+      <AlertTriangle size={48} color="#94a3b8" />
+      <Heading size="md" style={{ color: N.navy }}>Impossible de charger ce produit</Heading>
+      <Text fontSize="sm" style={{ color: N.muted }}>Vérifiez votre connexion puis réessayez.</Text>
+      <Button onClick={() => setReloadKey((k) => k + 1)}
+        rounded="xl" style={{ background: N.navy, color: 'white' }}>
+        Réessayer
+      </Button>
+    </Flex>
+  );
   if (!product) return (
     <Flex direction="column" align="center" justify="center" minH="60vh" gap={4}>
       <Package size={48} color="#94a3b8" />
@@ -339,6 +421,7 @@ export default function ProductDetailPage() {
   const hasCodes     = !!(product.ean || product.hs_code);
   const hasDistrib   = !!(product.distribution_channels?.length || product.target_segment || product.usp);
 
+  const reviewCount = Math.max(product.review_count ?? 0, reviews.length);
   const sectionNav = [
     { id: 'description', label: 'Description', show: !!(product.long_description || product.usp) },
     { id: 'nutrition', label: 'Nutrition', show: hasNutrition },
@@ -349,7 +432,7 @@ export default function ProductDetailPage() {
     { id: 'codes', label: 'Codes', show: hasCodes },
     { id: 'documents', label: 'Documents', show: documents.length > 0 },
     { id: 'commercial', label: 'Commerce', show: hasDistrib },
-    { id: 'reviews', label: `Avis (${reviews.length})`, show: true },
+    { id: 'reviews', label: reviewCount > 0 ? `Avis (${reviewCount})` : 'Avis', show: true },
   ].filter((s) => s.show);
 
   return (
@@ -683,8 +766,10 @@ export default function ProductDetailPage() {
                       textTransform="uppercase" letterSpacing="0.05em">
                       Quantité (MOQ : {product.moq})
                     </Text>
-                    <NumberInput value={qty} min={product.moq} step={product.pack_size}
-                      onChange={(_, v) => setQty(isNaN(v) ? product.moq : v)}>
+                    <NumberInput value={qty} min={normalizeQty(product.moq, product.moq, product.pack_size)}
+                      step={Math.max(1, product.pack_size || 1)} keepWithinRange={false} clampValueOnBlur={false}
+                      onChange={(_, v) => setQty(isNaN(v) ? product.moq : v)}
+                      onBlur={() => setQty((q) => normalizeQty(q, product.moq, product.pack_size))}>
                       <NumberInputField rounded="xl" fontFamily="mono" fontWeight="700" fontSize="sm"
                         style={{ borderColor: N.border }}
                         _focus={{ borderColor: N.amber, boxShadow: `0 0 0 1px ${N.amber}` }} />
@@ -709,7 +794,8 @@ export default function ProductDetailPage() {
                 <VStack spacing={2}>
                   {sortedTiers.length > 0 ? (
                     <Button leftIcon={<ShoppingCart size={15} />} w="full" rounded="xl" size="lg"
-                      isLoading={addingToCart} onClick={() => addToCart()} fontWeight="800"
+                      isLoading={addingToCart === 'main'} isDisabled={addingToCart !== null}
+                      onClick={() => addToCart()} fontWeight="800"
                       style={{ background: N.navy, color: 'white' }} _hover={{ opacity: 0.9 }}>
                       Ajouter au panier
                     </Button>
@@ -759,10 +845,12 @@ export default function ProductDetailPage() {
                     </Text>
                   </HStack>
                   <HStack spacing={3} flexShrink={0}>
-                    <HStack spacing={1}>
-                      <Shield size={11} color="#16a34a" />
-                      <Text fontSize="10px" color="green.700" fontWeight="600">Vérifié</Text>
-                    </HStack>
+                    {product.organisations.validation_status === 'active' && (
+                      <HStack spacing={1}>
+                        <Shield size={11} color="#16a34a" />
+                        <Text fontSize="10px" color="green.700" fontWeight="600">Vérifié</Text>
+                      </HStack>
+                    )}
                     {product.haccp_compliant && (
                       <HStack spacing={1}>
                         <CheckCircle size={11} color="#2563eb" />
@@ -772,6 +860,33 @@ export default function ProductDetailPage() {
                   </HStack>
                 </Flex>
               )}
+            </Box>
+          ) : user ? (
+            /* Connecté mais sans organisation : finir l'inscription, pas /auth */
+            <Box rounded="2xl" overflow="hidden"
+              style={{ border: `1.5px solid ${N.border}`, boxShadow: '0 4px 24px rgba(13,31,56,0.08)' }}>
+              <Box px={5} py={5}
+                style={{ background: `linear-gradient(135deg, ${N.navy} 0%, ${N.navyMid} 100%)` }}>
+                <HStack spacing={2} mb={2}>
+                  <Lock size={12} color="rgba(255,255,255,0.5)" />
+                  <Text fontSize="9px" color="rgba(255,255,255,0.6)" fontWeight="700"
+                    textTransform="uppercase" letterSpacing="0.1em">
+                    Dossier professionnel
+                  </Text>
+                </HStack>
+                <Text fontWeight="800" color="white" fontSize="sm" lineHeight={1.4}>
+                  {profile?.onboarding_done
+                    ? 'Votre dossier est en cours de validation'
+                    : 'Finalisez votre inscription pour voir les tarifs'}
+                </Text>
+              </Box>
+              <Box bg="white" px={5} py={4}>
+                <Button leftIcon={<UserPlus size={14} />} onClick={goToFinishSignup}
+                  w="full" size="sm" rounded="xl" fontWeight="700"
+                  style={{ background: N.amber, color: 'white' }} _hover={{ opacity: 0.9 }}>
+                  {profile?.onboarding_done ? 'Voir le statut de mon dossier' : 'Finaliser mon inscription'}
+                </Button>
+              </Box>
             </Box>
           ) : (
             /* Price lock for non-authenticated */
@@ -795,12 +910,12 @@ export default function ProductDetailPage() {
                   Accès réservé aux professionnels avec dossier validé.
                 </Text>
                 <VStack spacing={2}>
-                  <Button leftIcon={<UserPlus size={14} />} onClick={() => navigate('/auth')}
+                  <Button leftIcon={<UserPlus size={14} />} onClick={() => goToAuth(true)}
                     w="full" size="sm" rounded="xl" fontWeight="700"
                     style={{ background: N.amber, color: 'white' }} _hover={{ opacity: 0.9 }}>
                     Créer un compte professionnel
                   </Button>
-                  <Button variant="ghost" onClick={() => navigate('/auth')} w="full" size="sm"
+                  <Button variant="ghost" onClick={() => goToAuth(false)} w="full" size="sm"
                     rounded="xl" fontWeight="600" style={{ color: N.navy }} fontSize="xs">
                     Déjà membre — Se connecter
                   </Button>
@@ -882,14 +997,15 @@ export default function ProductDetailPage() {
                               DLC J{days >= 0 ? '+' : ''}{days}
                             </Text>
                           )}
+                          <Text fontSize="10px" color="orange.700">{lot.qty_available} u dispo.</Text>
                         </HStack>
                       </Box>
                       <Button size="xs" rounded="xl" fontWeight="700"
-                        isLoading={addingToCart}
+                        isLoading={addingToCart === lot.id} isDisabled={addingToCart !== null}
                         leftIcon={<ShoppingCart size={11} />}
                         style={{ background: '#ea580c', color: 'white' }}
                         _hover={{ opacity: 0.9 }}
-                        onClick={() => addToCart(lot.specific_price!)}>
+                        onClick={() => addToCart(lot)}>
                         Acheter
                       </Button>
                     </Flex>
@@ -902,7 +1018,7 @@ export default function ProductDetailPage() {
       </Grid>
 
       {/* ── Section anchor nav ───────────────────────────────────────────── */}
-      <Box position="sticky" top="40px" zIndex={100} bg="white" mt={10}
+      <Box position="sticky" top={{ base: '60px', md: '68px' }} zIndex={100} bg="white" mt={10}
         style={{ borderTop: `1px solid ${N.border}`, borderBottom: `1px solid ${N.border}`, boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
         <Flex overflowX="auto" h="40px" align="center"
           sx={{ '&::-webkit-scrollbar': { display: 'none' } }}>
@@ -1405,7 +1521,7 @@ export default function ProductDetailPage() {
         )}
 
         {/* Avis */}
-        <Section id="reviews" title={`Avis clients (${reviews.length})`} icon={MessageSquare}>
+        <Section id="reviews" title={reviewCount > 0 ? `Avis clients (${reviewCount})` : 'Avis clients'} icon={MessageSquare}>
           {reviews.length === 0 ? (
             <Flex direction="column" align="center" py={10} gap={3}>
               <Flex w={14} h={14} rounded="2xl" align="center" justify="center"
@@ -1413,6 +1529,7 @@ export default function ProductDetailPage() {
                 <MessageSquare size={24} color="#cbd5e1" />
               </Flex>
               <Text fontWeight="700" style={{ color: N.navy }}>Aucun avis pour le moment</Text>
+              <Text fontSize="sm" style={{ color: N.muted }}>Soyez le premier à donner votre avis après votre commande.</Text>
             </Flex>
           ) : (
             <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
@@ -1422,7 +1539,7 @@ export default function ProductDetailPage() {
                   <Flex justify="space-between" align="start" mb={3}>
                     <Box>
                       <Text fontWeight="700" fontSize="sm" style={{ color: N.navy }}>
-                        {r.reviewer_name ?? 'Acheteur vérifié'}
+                        {r.reviewer_name ?? 'Acheteur professionnel'}
                       </Text>
                       <Text fontSize="10px" style={{ color: N.muted }}>
                         {new Date(r.created_at).toLocaleDateString('fr-FR', {

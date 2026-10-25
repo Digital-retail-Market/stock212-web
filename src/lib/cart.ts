@@ -15,14 +15,31 @@ import { supabase } from './supabase';
  *     le même produit remplaçait la quantité au lieu de l'additionner.
  *
  * Toute page qui ajoute un produit au panier doit passer par cette fonction.
+ *
+ * Un article acheté sur un lot de déstockage DLC porte son `lotId` : il forme
+ * une ligne distincte du même produit au prix normal, et c'est le prix du lot
+ * que place_multi_vendor_order facture (migration 051).
  */
+
+// Émis après chaque modification du panier : tous les useCart() montés (badge
+// du header, bottom nav, drawer) se rechargent, comme useWishlist.
+export const CART_CHANGE_EVENT = 's212_cart_change';
+
+export function notifyCartChanged() {
+  window.dispatchEvent(new Event(CART_CHANGE_EVENT));
+}
+
 export async function addToCart(params: {
   buyerOrgId: string;
   productId: string;
   quantity: number;
   unitPrice: number | null;
+  lotId?: string | null;
+  deliveryMethod?: string | null;
 }): Promise<{ error: string | null }> {
   const { buyerOrgId, productId, quantity, unitPrice } = params;
+  const lotId = params.lotId ?? null;
+  const deliveryMethod = params.deliveryMethod ?? null;
 
   // 1. Récupère le panier actif du buyer, ou le crée s'il n'existe pas.
   const { data: cartRows, error: cartFetchError } = await supabase
@@ -51,21 +68,26 @@ export async function addToCart(params: {
   }
 
   // 2. Incrémente si l'article est déjà dans CE panier, sinon l'insère.
-  const { data: existing, error: existingError } = await supabase
+  let existingQuery = supabase
     .from('cart_items')
     .select('id, quantity')
     .eq('cart_id', cartId)
-    .eq('product_id', productId)
-    .maybeSingle();
+    .eq('product_id', productId);
+  existingQuery = lotId ? existingQuery.eq('lot_id', lotId) : existingQuery.is('lot_id', null);
+  const { data: existing, error: existingError } = await existingQuery.maybeSingle();
 
   if (existingError) return { error: existingError.message };
 
   if (existing) {
+    const newQty = existing.quantity + quantity;
+    // Le palier dépend de la quantité totale, pas de la quantité ajoutée.
+    const newPrice = lotId ? unitPrice : await tierPriceFor(productId, newQty, unitPrice);
     const { error: updateError } = await supabase
       .from('cart_items')
       .update({
-        quantity: existing.quantity + quantity,
-        ...(unitPrice !== null ? { unit_price_computed: unitPrice } : {}),
+        quantity: newQty,
+        ...(newPrice !== null ? { unit_price_computed: newPrice } : {}),
+        ...(deliveryMethod ? { preferred_delivery_method: deliveryMethod } : {}),
       })
       .eq('id', existing.id);
     if (updateError) return { error: updateError.message };
@@ -75,9 +97,23 @@ export async function addToCart(params: {
       product_id: productId,
       quantity,
       unit_price_computed: unitPrice,
+      lot_id: lotId,
+      preferred_delivery_method: deliveryMethod,
     });
     if (insertError) return { error: insertError.message };
   }
 
+  notifyCartChanged();
   return { error: null };
+}
+
+async function tierPriceFor(productId: string, qty: number, fallback: number | null): Promise<number | null> {
+  const { data } = await supabase
+    .from('price_tiers')
+    .select('unit_price')
+    .eq('product_id', productId)
+    .lte('qty_min', qty)
+    .order('qty_min', { ascending: false })
+    .limit(1);
+  return data?.[0]?.unit_price ?? fallback;
 }

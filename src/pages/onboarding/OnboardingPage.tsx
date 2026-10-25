@@ -7,6 +7,7 @@ import {
 import { Package, ShoppingBag, Truck, CheckCircle, Briefcase, Search, MapPin } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
+import { takeSignupRole, takeReturnPath } from '../../lib/signupRole';
 import type { BusinessCategory } from '../../types';
 import {
   ROLE_TO_FIELD_DEF_ROLE, groupFieldDefsBySection, LEGAL_STEP_SECTION, parseStorageTarget,
@@ -108,7 +109,7 @@ export default function OnboardingPage() {
   const [error, setError] = useState('');
   const [businessCategories, setBusinessCategories] = useState<BusinessCategory[]>([]);
 
-  const [selectedRole, setSelectedRole] = useState<OnboardingRole | null>(null);
+  const [selectedRole, setSelectedRole] = useState<OnboardingRole | null>(takeSignupRole);
   // "Type d'activité" reste hardcodé : ses options viennent de business_categories,
   // déjà géré par sa propre page admin (AdminBusinessCategories), pas une liste statique.
   const [subType, setSubType] = useState('');
@@ -464,7 +465,7 @@ export default function OnboardingPage() {
       const dest =
         selectedRole === 'seller' ? '/vendor' :
         selectedRole === 'delivery' ? '/delivery' :
-        '/buyer';
+        (takeReturnPath() ?? '/buyer');
       window.location.replace(dest);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Erreur lors de la création du dossier');

@@ -1,5 +1,6 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { rememberSignupRole } from '../../lib/signupRole';
 import {
   Box, Button, Flex, FormControl, FormLabel, Heading, Input,
   Text, VStack, HStack, Alert, AlertIcon, useToast, Image,
@@ -223,7 +224,10 @@ function BrandPanel() {
 
 // ─── AuthPage ─────────────────────────────────────────────────────────────────
 export default function AuthPage() {
-  const [mode, setMode] = useState<'signin' | 'signup'>('signin');
+  // /auth?mode=signup ouvre directement l'onglet inscription.
+  const [mode, setMode] = useState<'signin' | 'signup'>(
+    () => (new URLSearchParams(window.location.search).get('mode') === 'signup' ? 'signup' : 'signin'),
+  );
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
@@ -234,6 +238,12 @@ export default function AuthPage() {
   const navigate = useNavigate();
   const toast = useToast();
   const { isOpen: isForgotOpen, onOpen: openForgot, onClose: closeForgot } = useDisclosure();
+  // /auth?role=seller (bouton « Connexion fournisseur ») : « Vendeur » sera présélectionné à l'onboarding.
+  const isSupplier = useSearchParams()[0].get('role') === 'seller';
+
+  useEffect(() => {
+    if (isSupplier) rememberSignupRole('seller');
+  }, [isSupplier]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -307,7 +317,9 @@ export default function AuthPage() {
           {/* Headline */}
           <VStack align="start" spacing={1} mb={7}>
             <Heading size="md" color="gray.900" fontWeight="700" letterSpacing="-0.01em">
-              {mode === 'signin' ? 'Connexion à votre espace' : 'Demander un accès'}
+              {mode === 'signin'
+                ? (isSupplier ? 'Connexion à votre espace fournisseur' : 'Connexion à votre espace')
+                : (isSupplier ? 'Devenir fournisseur' : 'Demander un accès')}
             </Heading>
             <Text color="gray.500" fontSize="sm" lineHeight={1.6}>
               {mode === 'signin'

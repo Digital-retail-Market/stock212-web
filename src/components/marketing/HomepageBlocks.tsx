@@ -734,8 +734,10 @@ export function DynamicCategoryRows({ campaigns }: { campaigns: CategoryRowCampa
   const navigate = useNavigate();
   const [catProducts, setCatProducts] = useState<Record<string, Product[]>>({});
 
+  const catKey = campaigns.map(c => c.category_id).filter(Boolean).join(',');
+
   useEffect(() => {
-    const catIds = campaigns.map(c => c.category_id).filter(Boolean) as string[];
+    const catIds = catKey ? catKey.split(',') : [];
     if (catIds.length === 0) return;
     Promise.all(
       catIds.map(id =>
@@ -748,7 +750,7 @@ export function DynamicCategoryRows({ campaigns }: { campaigns: CategoryRowCampa
       results.forEach(({ id, products }) => { map[id] = products; });
       setCatProducts(map);
     });
-  }, [campaigns.map(c => c.id).join(',')]);
+  }, [catKey]);
 
   if (campaigns.length === 0) return null;
 

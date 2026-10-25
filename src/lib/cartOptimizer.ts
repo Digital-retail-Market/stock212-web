@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { supabase } from './supabase';
+import { notifyCartChanged } from './cart';
 
 // ── Types publics ──────────────────────────────────────────────────────────────
 
@@ -417,7 +418,8 @@ export async function applyTemplateOptimization(
         unit_price_computed: line.cheaperUnitPrice,
       })
       .eq('id', line.cartItemId)
-      .eq('cart_id', cartId);
+      .eq('cart_id', cartId)
+      .is('lot_id', null); // une ligne lot DLC reste attachée à son produit
     if (error) return { error: error.message };
   }
   return { error: null };
@@ -461,6 +463,7 @@ export async function addOptimizedLinesToCart(
       .select('id, quantity')
       .eq('cart_id', cartId)
       .eq('product_id', productId)
+      .is('lot_id', null)
       .maybeSingle();
 
     if (existing) {
@@ -478,6 +481,7 @@ export async function addOptimizedLinesToCart(
     }
   }
 
+  notifyCartChanged();
   return { error: null };
 }
 

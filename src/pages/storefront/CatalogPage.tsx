@@ -172,6 +172,7 @@ export default function CatalogPage() {
     if (selectedCategoryId) query = query.eq('category_id', selectedCategoryId);
     if (selectedTemps.length > 0) query = query.in('temperature', selectedTemps);
     if (selectedBrands.length > 0) query = query.in('brand_id', selectedBrands);
+    if (selectedCerts.length > 0) query = query.overlaps('certifications', selectedCerts);
     if (onPromoOnly) query = query.eq('is_on_promotion', true);
     if (newOnly) query = query.eq('is_new', true);
     if (minRating > 0) query = query.gte('avg_rating', minRating);

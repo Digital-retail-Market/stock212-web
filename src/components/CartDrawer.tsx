@@ -7,14 +7,10 @@ import {
 } from '@chakra-ui/react';
 import { ShoppingCart, Trash2, AlertTriangle, Package, ArrowRight, TrendingUp } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { useCart, type CartItemWithProduct } from '../hooks/useCart';
+import {
+  useCart, itemUnitPrice, itemMinQty, type CartItemWithProduct,
+} from '../hooks/useCart';
 import type { PriceTier } from '../types';
-
-function getApplicableTier(tiers: PriceTier[], qty: number): PriceTier | null {
-  const sorted = [...tiers].sort((a, b) => a.qty_min - b.qty_min);
-  const eligible = sorted.filter((t) => qty >= t.qty_min);
-  return eligible[eligible.length - 1] ?? sorted[0] ?? null;
-}
 
 function getNextTier(tiers: PriceTier[], qty: number): PriceTier | null {
   const sorted = [...tiers].sort((a, b) => a.qty_min - b.qty_min);
@@ -35,15 +31,17 @@ function CartItemRow({
   if (!product) return null;
 
   const tiers = product.price_tiers ?? [];
-  const tier = getApplicableTier(tiers, item.quantity);
-  const nextTier = getNextTier(tiers, item.quantity);
+  const lot = item.lot ?? null;
+  const unitPrice = itemUnitPrice(item);
+  const minQty = itemMinQty(item);
+  const nextTier = lot ? null : getNextTier(tiers, item.quantity);
   const needed = nextTier ? nextTier.qty_min - item.quantity : 0;
-  const belowMoq = item.quantity < product.moq;
+  const belowMoq = item.quantity < minQty;
 
   function handleQtyChange(_: string, val: number) {
-    const safeQty = isNaN(val) || val < 1 ? product.moq : val;
-    const newTier = getApplicableTier(tiers, safeQty);
-    onQtyChange(safeQty, newTier?.unit_price ?? null);
+    let safeQty = isNaN(val) || val < 1 ? minQty : val;
+    if (lot) safeQty = Math.min(safeQty, lot.qty_available);
+    onQtyChange(safeQty, itemUnitPrice(item, safeQty));
   }
 
   return (
@@ -68,14 +66,20 @@ function CartItemRow({
           <Text fontSize="xs" color="blue.500" mt={0.5}>
             {(product as any).organisations?.name}
           </Text>
+          {lot && (
+            <Badge colorScheme="orange" fontSize="10px" mt={1}>
+              Déstockage · Lot {lot.lot_number}
+            </Badge>
+          )}
 
           {/* Qty stepper */}
           <HStack mt={2} spacing={2}>
             <NumberInput
               size="xs"
               value={item.quantity}
-              min={product.moq}
-              step={product.pack_size}
+              min={minQty}
+              max={lot?.qty_available}
+              step={lot ? 1 : product.pack_size}
               onChange={handleQtyChange}
               maxW="90px"
             >
@@ -85,14 +89,14 @@ function CartItemRow({
                 <NumberDecrementStepper />
               </NumberInputStepper>
             </NumberInput>
-            <Text fontSize="xs" color="gray.400">× {tier?.unit_price.toFixed(2)} {product.currency}</Text>
+            <Text fontSize="xs" color="gray.400">× {unitPrice?.toFixed(2)} {product.currency}</Text>
           </HStack>
         </Box>
 
         {/* Price + remove */}
         <VStack spacing={1} align="end" flexShrink={0}>
           <Text fontWeight="bold" fontSize="sm" color="blue.700">
-            {tier ? (tier.unit_price * item.quantity).toFixed(2) : '—'} {product.currency}
+            {unitPrice != null ? (unitPrice * item.quantity).toFixed(2) : '—'} {product.currency}
           </Text>
           <Button
             size="xs" variant="ghost" colorScheme="red" p={1}
@@ -111,7 +115,7 @@ function CartItemRow({
         >
           <AlertTriangle size={13} color="var(--chakra-colors-orange-500)" />
           <Text fontSize="xs" color="orange.700">
-            MOQ : {product.moq} unités minimum — il manque {product.moq - item.quantity}
+            MOQ : {minQty} unités minimum — il manque {minQty - item.quantity}
           </Text>
         </HStack>
       )}
@@ -125,7 +129,7 @@ function CartItemRow({
           <TrendingUp size={13} color="var(--chakra-colors-blue-500)" />
           <Text fontSize="xs" color="blue.700">
             +{needed} unités → {nextTier.unit_price.toFixed(2)} {product.currency}/u
-            {' '}(-{Math.round((1 - nextTier.unit_price / (tier?.unit_price ?? nextTier.unit_price)) * 100)}%)
+            {' '}(-{Math.round((1 - nextTier.unit_price / (unitPrice ?? nextTier.unit_price)) * 100)}%)
           </Text>
         </HStack>
       )}
@@ -147,10 +151,7 @@ function SellerGroup({
   onRemove: (id: string) => void;
   onQtyChange: (id: string, qty: number, price: number | null) => void;
 }) {
-  const sellerTotal = items.reduce((s, i) => {
-    const tier = getApplicableTier(i.products?.price_tiers ?? [], i.quantity);
-    return s + (tier ? tier.unit_price * i.quantity : 0);
-  }, 0);
+  const sellerTotal = items.reduce((s, i) => s + (itemUnitPrice(i) ?? 0) * i.quantity, 0);
 
   return (
     <Box bg="white" rounded="xl" border="1px" borderColor="gray.100" overflow="hidden">
@@ -196,10 +197,7 @@ export function CartDrawer({ isOpen, onClose }: { isOpen: boolean; onClose: () =
     bySeller[orgId].items.push(item);
   }
 
-  const grandTotal = items.reduce((s, i) => {
-    const tier = getApplicableTier(i.products?.price_tiers ?? [], i.quantity);
-    return s + (tier ? tier.unit_price * i.quantity : 0);
-  }, 0);
+  const grandTotal = items.reduce((s, i) => s + (itemUnitPrice(i) ?? 0) * i.quantity, 0);
 
   const currency = items[0]?.products?.currency ?? '€';
 

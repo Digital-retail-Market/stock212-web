@@ -9,7 +9,7 @@ import {
 import { ArrowLeft, CheckCircle, CreditCard, AlertTriangle, Truck, Star } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
-import { useCart } from '../../hooks/useCart';
+import { useCart, itemUnitPrice } from '../../hooks/useCart';
 import {
   fetchPartnerCarriers,
   fetchSellerFleetAvailability,
@@ -22,7 +22,6 @@ import {
   computeDeliveryFee,
   type DeliveryConfig,
 } from '../../lib/cartOptimizer';
-import type { PriceTier } from '../../types';
 
 function fmtMAD(n: number) {
   return new Intl.NumberFormat('fr-MA', { style: 'currency', currency: 'MAD', maximumFractionDigits: 2 }).format(n);
@@ -33,12 +32,6 @@ const C = {
   borderSel: 'blue.300',
   bgSel:   'blue.50',
 };
-
-function getApplicableTier(tiers: PriceTier[], qty: number): PriceTier | null {
-  const sorted = [...tiers].sort((a, b) => a.qty_min - b.qty_min);
-  const eligible = sorted.filter((t) => qty >= t.qty_min);
-  return eligible[eligible.length - 1] ?? sorted[0] ?? null;
-}
 
 export default function CheckoutPage() {
   const navigate = useNavigate();
@@ -116,24 +109,26 @@ export default function CheckoutPage() {
     load();
   }, [loading, items.length, activeOrg?.id]);
 
+  // Mode choisi sur la fiche produit : si toutes les lignes sont en
+  // enlèvement (EXW), l'acheteur organise lui-même le transport.
+  useEffect(() => {
+    if (items.length > 0 && items.every((i) => i.preferred_delivery_method === 'enlevement')) {
+      setDeliveryMethod('buyer_managed');
+    }
+  }, [items.length]);
+
   // Reset carrier selection when method changes
   useEffect(() => {
     if (deliveryMethod !== 'partner_carrier') setSelectedCarrierId(null);
   }, [deliveryMethod]);
 
-  const grandTotal = items.reduce((s, i) => {
-    const tier = getApplicableTier(i.products?.price_tiers ?? [], i.quantity);
-    return s + (tier ? tier.unit_price * i.quantity : 0);
-  }, 0);
+  const grandTotal = items.reduce((s, i) => s + (itemUnitPrice(i) ?? 0) * i.quantity, 0);
   const currency = hasMixedCurrencies ? null : (distinctCurrencies[0] ?? 'MAD');
 
   // Delivery cost per vendor (live, from vendor_delivery_config)
   const vendorDeliveryCosts: Record<string, number> = {};
   for (const [orgId, group] of Object.entries(bySeller)) {
-    const groupSubtotal = group.items.reduce((s, i) => {
-      const tier = getApplicableTier(i.products?.price_tiers ?? [], i.quantity);
-      return s + (tier ? tier.unit_price * i.quantity : 0);
-    }, 0);
+    const groupSubtotal = group.items.reduce((s, i) => s + (itemUnitPrice(i) ?? 0) * i.quantity, 0);
     const cfg = vendorDeliveryConfigs.get(orgId) ?? null;
     // If seller delivers with own fleet, no separate fee charged by their delivery config
     const effectiveMethod = deliveryMethod;
@@ -490,10 +485,7 @@ export default function CheckoutPage() {
             <Heading size="sm" mb={5} color="gray.700">Récapitulatif</Heading>
             <VStack spacing={4} align="stretch">
               {Object.entries(bySeller).map(([orgId, group], idx, arr) => {
-                const groupTotal = group.items.reduce((s, i) => {
-                  const tier = getApplicableTier(i.products?.price_tiers ?? [], i.quantity);
-                  return s + (tier ? tier.unit_price * i.quantity : 0);
-                }, 0);
+                const groupTotal = group.items.reduce((s, i) => s + (itemUnitPrice(i) ?? 0) * i.quantity, 0);
                 const delivFee = vendorDeliveryCosts[orgId] ?? 0;
                 const isFreeDelivery = delivFee === 0;
                 const cfg = vendorDeliveryConfigs.get(orgId);
@@ -514,14 +506,14 @@ export default function CheckoutPage() {
                     </HStack>
                     <VStack spacing={1} align="stretch" mb={3}>
                       {group.items.map(item => {
-                        const tier = getApplicableTier(item.products?.price_tiers ?? [], item.quantity);
+                        const unitPrice = itemUnitPrice(item);
                         return (
                           <HStack key={item.id} justify="space-between">
                             <Text fontSize="sm" color="gray.600" noOfLines={1} flex={1} minW={0}>
-                              {item.products?.name} × {item.quantity}
+                              {item.products?.name}{item.lot ? ` (lot ${item.lot.lot_number})` : ''} × {item.quantity}
                             </Text>
                             <Text fontSize="sm" fontWeight="semibold" color="gray.800" flexShrink={0}>
-                              {tier ? (tier.unit_price * item.quantity).toFixed(2) : '—'} {item.products?.currency ?? 'MAD'}
+                              {unitPrice != null ? (unitPrice * item.quantity).toFixed(2) : '—'} {item.products?.currency ?? 'MAD'}
                             </Text>
                           </HStack>
                         );
